@@ -101,7 +101,6 @@
     }
   </style>
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 
@@ -161,7 +160,6 @@
 
     <div class="grid">
 
-      <!-- Campos do mês -->
       <div class="card">
         <p class="cardTitle">Campos do mês</p>
 
@@ -213,7 +211,6 @@
         </div>
       </div>
 
-      <!-- Como o gráfico funciona -->
       <div class="card">
         <p class="cardTitle">Como o gráfico funciona</p>
 
@@ -237,7 +234,6 @@
         </div>
       </div>
 
-      <!-- Gráfico -->
       <div class="card">
         <p class="cardTitle">Gráfico 2026</p>
         <div class="chartBox">
@@ -256,7 +252,9 @@
       onAuthStateChanged,
       signInWithEmailAndPassword,
       createUserWithEmailAndPassword,
-      signOut
+      signOut,
+      setPersistence,
+      browserSessionPersistence
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
     const firebaseConfig = {
@@ -271,6 +269,9 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
+
+    // ✅ Força login "por sessão" (fecha o navegador = desloga)
+    await setPersistence(auth, browserSessionPersistence);
 
     const $ = (id) => document.getElementById(id);
     const fmt = (n) => (Number(n)||0).toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
@@ -289,7 +290,6 @@
       $("appScreen").style.display = "block";
     }
 
-    // ====== Meses 2026 ======
     const months = Array.from({length:12}, (_,i)=> {
       const m = String(i+1).padStart(2,"0");
       return `2026-${m}`;
@@ -308,7 +308,6 @@
     $("monthSelect").value = defaultMonth;
     $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
 
-    // ====== Estado ======
     let uid = null;
     let unsubSelected = null;
     let unsubAllMonths = null;
@@ -424,13 +423,9 @@
           responsive: true,
           plugins: {
             legend: { position: "bottom" },
-            tooltip: {
-              callbacks: { label: (ctx) => `${ctx.dataset.label}: R$ ${fmt(ctx.parsed.y)}` }
-            }
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: R$ ${fmt(ctx.parsed.y)}` } }
           },
-          scales: {
-            y: { ticks: { callback: (v) => `R$ ${fmt(v)}` } }
-          }
+          scales: { y: { ticks: { callback: (v) => `R$ ${fmt(v)}` } } }
         }
       });
     }
@@ -523,7 +518,6 @@
       });
     });
 
-    // ====== Login actions ======
     $("btnLogin").addEventListener("click", async () => {
       try{
         $("loginStatus").textContent = "Entrando…";
@@ -548,9 +542,7 @@
       await signOut(auth);
     });
 
-    // ====== Auth state ======
     onAuthStateChanged(auth, async (user) => {
-      // limpa listeners ao trocar usuário
       if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
       if (unsubSelected) { unsubSelected(); unsubSelected = null; }
 
@@ -567,7 +559,6 @@
         $("status").textContent = "Inicializando meses de 2026…";
         await ensureMonthDocsExist();
         $("status").textContent = "Pronto ✅";
-
         listenAllMonths();
         listenSelectedMonth();
       } catch(e){
@@ -576,7 +567,6 @@
       }
     });
 
-    // ao abrir a página
     showLogin("Verificando sessão…");
   </script>
 </body>
