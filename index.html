@@ -3,390 +3,508 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Controle de Gastos</title>
+  <title>Controle 2026 - Gastos</title>
+
   <style>
     :root{
-      --bg: #f3dcc6;
-      --panel: #f7e6d6;
-      --line: #d8b79c;
-      --blue: #2b67c9;
-      --blue2:#1f56b3;
-      --text:#1c1c1c;
-      --muted:#6b5a4f;
-      --radius: 14px;
+      --bg:#f3dcc6; --panel:#f7e6d6; --line:#d8b79c;
+      --blue:#2b67c9; --blue2:#1f56b3; --text:#1c1c1c; --muted:#6b5a4f;
+      --radius:14px;
     }
+    body{ margin:0; font-family: Arial, sans-serif; background:var(--bg); color:var(--text); }
+    .wrap{ max-width:1200px; margin:18px auto; padding:0 14px 40px; }
 
-    body{ margin:0; font-family: Arial, sans-serif; background: var(--bg); color:var(--text); }
-    .wrap{ max-width: 1200px; margin: 18px auto; padding: 0 14px 40px; }
-
-    /* topo */
     .topbar{
-      display:flex; align-items:center; justify-content:space-between; gap:12px;
-      padding: 12px 14px; background: var(--panel); border:1px solid var(--line);
-      border-radius: var(--radius);
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:12px 14px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+      flex-wrap: wrap;
     }
     .month{
-      font-family: "Brush Script MT", "Comic Sans MS", cursive;
-      font-size: 56px; line-height: 1;
-      margin: 0;
+      font-family:"Brush Script MT","Comic Sans MS",cursive;
+      font-size:56px; line-height:1; margin:0;
+      min-width:240px;
     }
+    .small{ font-size:12px; color:var(--muted); }
     .saldoBox{
-      flex:1;
-      display:flex; align-items:center; justify-content:center;
-      gap:16px;
-      background: var(--blue);
-      color: #fff;
-      border-radius: 12px;
-      padding: 10px 14px;
-      min-height: 54px;
+      flex:1; min-width:260px;
+      display:flex; align-items:center; justify-content:center; gap:16px;
+      background:var(--blue); color:#fff; border-radius:12px; padding:10px 14px; min-height:54px;
     }
-    .saldoBox .label{ font-weight:700; letter-spacing:.4px; }
-    .saldoBox .value{ font-weight:800; font-size: 18px; }
+    .saldoBox .label{ font-weight:800; letter-spacing:.4px; }
+    .saldoBox .value{ font-weight:900; font-size:18px; }
+    .controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
-    .monthSelect{
-      display:flex; gap:8px; align-items:center;
-    }
     select, input, button{
-      padding:10px; border-radius: 10px; border:1px solid var(--line);
-      background:#fff; font-size: 14px;
+      padding:10px; border-radius:10px; border:1px solid var(--line);
+      background:#fff; font-size:14px;
     }
-    button{ cursor:pointer; background: var(--blue2); color:#fff; border:none; }
-    button:hover{ filter: brightness(1.05); }
+    button{ cursor:pointer; background:var(--blue2); color:#fff; border:none; }
+    button:hover{ filter:brightness(1.05); }
+    .ghost{ background:#fff; color:var(--blue2); border:1px solid var(--blue2); }
 
-    /* grid principal */
     .grid{
-      margin-top: 14px;
+      margin-top:14px;
       display:grid;
-      grid-template-columns: 1.1fr 1.6fr 1fr;
-      gap: 14px;
+      grid-template-columns: 1.05fr 1.2fr 1.35fr;
+      gap:14px;
       align-items:start;
     }
-
     .card{
-      background: var(--panel);
+      background:var(--panel);
       border:1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 12px;
+      border-radius:var(--radius);
+      padding:12px;
     }
     .cardTitle{
       margin:0 0 10px;
-      font-size: 14px;
-      letter-spacing:.4px;
-      text-transform: uppercase;
-      color: var(--muted);
-      font-weight: 800;
+      font-size:14px; letter-spacing:.4px; text-transform:uppercase;
+      color:var(--muted); font-weight:900;
     }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; }
+    .field{ flex:1; min-width:210px; }
+    .field label{ display:block; font-size:12px; color:var(--muted); font-weight:800; margin:0 0 6px; }
+    .field input{ width:100%; box-sizing:border-box; }
 
-    /* tabelas */
-    table{ width:100%; border-collapse: collapse; }
-    th{
-      background: var(--blue);
-      color:#fff; padding: 9px; font-size: 13px; text-align:left;
-      position: sticky; top: 0;
-    }
-    td{ border-bottom: 1px solid var(--line); padding: 8px; font-size: 13px; }
-    tr:last-child td{ border-bottom: none; }
-    .small{ font-size:12px; color:var(--muted); }
-    .right{ text-align:right; }
-    .pill{
-      display:inline-block; padding:3px 8px; border:1px solid var(--line);
-      border-radius: 999px; background:#fff; font-size: 12px;
-    }
-
-    .split{
+    .kpis{
       display:grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap:10px;
     }
+    .kpi{
+      background:#fff; border:1px solid var(--line); border-radius:12px;
+      padding:10px;
+    }
+    .kpi .t{ font-size:12px; color:var(--muted); font-weight:800; }
+    .kpi .v{ font-size:18px; font-weight:900; margin-top:4px; }
 
     .totLine{
       display:flex; justify-content:space-between; align-items:center;
-      margin-top: 10px; padding-top: 10px;
-      border-top: 1px dashed var(--line);
-      font-weight: 800;
+      margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);
+      font-weight:900;
     }
 
-    /* altura das tabelas (scroll) */
-    .tableScroll{ max-height: 360px; overflow:auto; border-radius: 12px; }
-
-    /* área do gráfico (placeholder) */
     .chartBox{
-      height: 260px; border: 1px dashed var(--line); border-radius: 12px;
-      display:flex; align-items:center; justify-content:center;
-      color: var(--muted); background: #fff7ef;
+      background:#fff; border:1px solid var(--line); border-radius:12px;
+      padding:12px;
     }
 
-    @media (max-width: 980px){
+    .status{
+      margin-top:8px;
+      padding:8px 10px;
+      background:#fff; border:1px solid var(--line); border-radius:12px;
+      font-size:12px; color:var(--muted);
+    }
+
+    @media (max-width: 1020px){
       .grid{ grid-template-columns: 1fr; }
-      .month{ font-size: 44px; }
+      .month{ font-size:44px; }
     }
   </style>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
+
 <body>
   <div class="wrap">
-
-    <!-- Topo -->
     <div class="topbar">
-      <div style="min-width:280px">
+      <div>
         <h1 class="month" id="monthTitle">janeiro</h1>
-        <div class="small">Controle mensal de gastos</div>
+        <div class="small">Ano: <b>2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6))</div>
       </div>
 
       <div class="saldoBox">
-        <div class="label">SALDO</div>
-        <div class="value">R$ <span id="saldo">0,00</span></div>
+        <div class="label">SALDO FINAL (PROJETADO)</div>
+        <div class="value">R$ <span id="saldoFinal">0,00</span></div>
       </div>
 
-      <div class="monthSelect">
-        <select id="month">
-          <option value="2026-01">Jan/2026</option>
-          <option value="2026-02">Fev/2026</option>
-          <option value="2026-03">Mar/2026</option>
-        </select>
-        <button id="reload">Carregar</button>
+      <div class="controls">
+        <select id="monthSelect"></select>
+        <button id="saveBtn">Salvar mês</button>
+        <button id="resetBtn" class="ghost" title="Só zera os campos do mês selecionado (não apaga outros meses).">Zerar mês</button>
       </div>
     </div>
 
-    <!-- Grid -->
     <div class="grid">
 
-      <!-- Coluna esquerda -->
+      <!-- Campos do mês -->
       <div class="card">
-        <p class="cardTitle">Visão geral mensal</p>
+        <p class="cardTitle">Campos do mês</p>
 
-        <div class="split">
-          <div>
-            <div class="small">Entradas</div>
-            <div style="font-weight:900; font-size:18px">R$ <span id="incomesTotal">0,00</span></div>
+        <div class="row">
+          <div class="field">
+            <label>Salário do mês (R$)</label>
+            <input id="salario" type="number" step="0.01" placeholder="Ex: 3500.00">
           </div>
-          <div>
-            <div class="small">Saídas</div>
-            <div style="font-weight:900; font-size:18px">R$ <span id="expensesTotal">0,00</span></div>
+          <div class="field">
+            <label>Cartão Inter - fatura (R$)</label>
+            <input id="inter" type="number" step="0.01" placeholder="Ex: 1200.00">
           </div>
-          <div>
-            <div class="small">Gastos fixos</div>
-            <div style="font-weight:900">R$ <span id="fixedTotal">0,00</span></div>
+          <div class="field">
+            <label>Cartão C6 - fatura (R$)</label>
+            <input id="c6" type="number" step="0.01" placeholder="Ex: 800.00">
           </div>
-          <div>
-            <div class="small">Gastos variáveis</div>
-            <div style="font-weight:900">R$ <span id="varTotal">0,00</span></div>
+          <div class="field">
+            <label>Quanto tenho na conta (R$)</label>
+            <input id="saldoConta" type="number" step="0.01" placeholder="Ex: 500.00">
+          </div>
+        </div>
+
+        <div class="status" id="status">Conectando…</div>
+
+        <div style="margin-top:12px" class="kpis">
+          <div class="kpi">
+            <div class="t">Total Cartões (Inter + C6)</div>
+            <div class="v">R$ <span id="totalCartoes">0,00</span></div>
+          </div>
+          <div class="kpi">
+            <div class="t">Sobra do Salário (Salário − Cartões)</div>
+            <div class="v">R$ <span id="sobraSalario">0,00</span></div>
+          </div>
+          <div class="kpi" style="grid-column: 1 / -1;">
+            <div class="t">Saldo Final Projetado (Saldo em conta + Sobra do salário)</div>
+            <div class="v">R$ <span id="saldoFinal2">0,00</span></div>
           </div>
         </div>
 
         <div class="totLine">
-          <div>Saldo do mês</div>
-          <div>R$ <span id="monthBalance">0,00</span></div>
-        </div>
-
-        <div style="margin-top:12px">
-          <p class="cardTitle" style="margin-bottom:6px">Entradas do mês</p>
-          <div class="tableScroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Descrição</th><th>Data</th><th class="right">Valor</th>
-                </tr>
-              </thead>
-              <tbody id="incomesTable"></tbody>
-            </table>
-          </div>
+          <div>Resumo rápido</div>
+          <div id="quickHint" class="small"></div>
         </div>
       </div>
 
-      <!-- Meio: Gastos variáveis + fixos -->
+      <!-- Como o gráfico funciona -->
       <div class="card">
-        <p class="cardTitle">Gastos variáveis</p>
+        <p class="cardTitle">Como o gráfico funciona</p>
 
-        <!-- Form rápido -->
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-          <input id="vDesc" placeholder="Descrição" style="flex:2; min-width:180px">
-          <input id="vCat" placeholder="Categoria" style="flex:1; min-width:140px">
-          <input id="vDate" type="date" style="min-width:150px">
-          <input id="vValue" type="number" step="0.01" placeholder="Valor" style="min-width:140px">
-          <button id="addVar">Adicionar</button>
+        <div class="small" style="line-height:1.55">
+          <b>Barras (12 meses):</b><br>
+          • <b>Salário</b> (positivo)<br>
+          • <b>Cartões (Inter + C6)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
+
+          <b>Linha (12 meses):</b><br>
+          • <b>Saldo Final Projetado</b> = saldo em conta + (salário − cartões)<br><br>
+
+          Assim você enxerga fácil:
+          <ul>
+            <li>se os cartões estão consumindo muito do salário</li>
+            <li>se o saldo final projetado está subindo ou caindo ao longo de 2026</li>
+          </ul>
         </div>
 
-        <div class="tableScroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Descrição</th><th>Categoria</th><th>Data</th><th class="right">Valor</th>
-              </tr>
-            </thead>
-            <tbody id="varsTable"></tbody>
-          </table>
-        </div>
-
-        <div class="totLine">
-          <div>Total de gastos variáveis</div>
-          <div>R$ <span id="varTotal2">0,00</span></div>
-        </div>
-
-        <div style="margin-top:14px"></div>
-
-        <p class="cardTitle">Gastos fixos</p>
-
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-          <input id="fDesc" placeholder="Descrição" style="flex:2; min-width:180px">
-          <input id="fCat" placeholder="Categoria" style="flex:1; min-width:140px">
-          <input id="fDate" type="date" style="min-width:150px">
-          <input id="fValue" type="number" step="0.01" placeholder="Valor" style="min-width:140px">
-          <button id="addFixed">Adicionar</button>
-        </div>
-
-        <div class="tableScroll" style="max-height:280px">
-          <table>
-            <thead>
-              <tr>
-                <th>Descrição</th><th>Categoria</th><th>Data</th><th class="right">Valor</th><th>Pago?</th>
-              </tr>
-            </thead>
-            <tbody id="fixedTable"></tbody>
-          </table>
-        </div>
-
-        <div class="totLine">
-          <div>Total de gastos fixos</div>
-          <div>R$ <span id="fixedTotal2">0,00</span></div>
+        <div class="small" style="margin-top:10px">
+          Dica: preencha mês a mês (Jan…Dez). O gráfico se atualiza automaticamente quando salvar.
         </div>
       </div>
 
-      <!-- Direita: por categoria + gráfico -->
+      <!-- Gráfico -->
       <div class="card">
-        <p class="cardTitle">Gastos por categoria</p>
-        <div class="tableScroll" style="max-height: 300px">
-          <table>
-            <thead>
-              <tr>
-                <th>Categoria</th><th class="right">Total</th>
-              </tr>
-            </thead>
-            <tbody id="catTable"></tbody>
-          </table>
-        </div>
-
-        <div style="margin-top: 12px">
-          <p class="cardTitle">Gráfico</p>
-          <div class="chartBox">Aqui entra o gráfico (pizza/barra)</div>
+        <p class="cardTitle">Gráfico 2026</p>
+        <div class="chartBox">
+          <canvas id="chart" height="120"></canvas>
         </div>
       </div>
 
     </div>
   </div>
 
-  <script>
-    // Só pra “encher” a tela agora (mock). Depois a gente troca por Firestore.
-    const fmt = (n)=> (n||0).toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
-    const state = {
-      incomes: [
-        {desc:"Salário", date:"2026-02-05", value: 2661.81},
-        {desc:"Conta", date:"2026-02-05", value: 4034.81},
-      ],
-      vars: [],
-      fixed: [],
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc, collection, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+    // Seu Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCOZap1gB8N8k-3-4nhA-jd2k7HlFJgIes",
+      authDomain: "gastos-92e20.firebaseapp.com",
+      projectId: "gastos-92e20",
+      storageBucket: "gastos-92e20.firebasestorage.app",
+      messagingSenderId: "248552638302",
+      appId: "1:248552638302:web:0588762093eaf4108d31cf"
     };
 
-    function recalc(){
-      const incomesTotal = state.incomes.reduce((a,b)=>a+b.value,0);
-      const varTotal = state.vars.reduce((a,b)=>a+b.value,0);
-      const fixedTotal = state.fixed.reduce((a,b)=>a+b.value,0);
-      const expensesTotal = varTotal + fixedTotal;
-      const saldo = incomesTotal - expensesTotal;
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
 
-      document.getElementById("incomesTotal").textContent = fmt(incomesTotal);
-      document.getElementById("expensesTotal").textContent = fmt(expensesTotal);
-      document.getElementById("varTotal").textContent = fmt(varTotal);
-      document.getElementById("varTotal2").textContent = fmt(varTotal);
-      document.getElementById("fixedTotal").textContent = fmt(fixedTotal);
-      document.getElementById("fixedTotal2").textContent = fmt(fixedTotal);
-      document.getElementById("monthBalance").textContent = fmt(saldo);
-      document.getElementById("saldo").textContent = fmt(saldo);
+    const $ = (id) => document.getElementById(id);
+    const fmt = (n) => (Number(n)||0).toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
+    const num = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
 
-      // incomes table
-      const it = document.getElementById("incomesTable");
-      it.innerHTML = state.incomes.map(x=>`
-        <tr>
-          <td>${x.desc}</td>
-          <td>${x.date}</td>
-          <td class="right">R$ ${fmt(x.value)}</td>
-        </tr>
-      `).join("");
+    const months = Array.from({length:12}, (_,i)=> {
+      const m = String(i+1).padStart(2,"0");
+      return `2026-${m}`;
+    });
 
-      // vars
-      const vt = document.getElementById("varsTable");
-      vt.innerHTML = state.vars.map(x=>`
-        <tr>
-          <td>${x.desc}</td>
-          <td><span class="pill">${x.cat}</span></td>
-          <td>${x.date}</td>
-          <td class="right">R$ ${fmt(x.value)}</td>
-        </tr>
-      `).join("");
+    const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
 
-      // fixed
-      const ft = document.getElementById("fixedTable");
-      ft.innerHTML = state.fixed.map((x,i)=>`
-        <tr>
-          <td>${x.desc}</td>
-          <td><span class="pill">${x.cat}</span></td>
-          <td>${x.date}</td>
-          <td class="right">R$ ${fmt(x.value)}</td>
-          <td>
-            <input type="checkbox" ${x.paid ? "checked":""} onchange="togglePaid(${i})">
-          </td>
-        </tr>
-      `).join("");
+    // UI: preencher select
+    months.forEach((id, i) => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = `${monthNames[i]} / 2026`;
+      $("monthSelect").appendChild(opt);
+    });
 
-      // category summary (vars + fixed)
-      const sums = {};
-      [...state.vars, ...state.fixed].forEach(x=>{
-        sums[x.cat] = (sums[x.cat]||0) + x.value;
-      });
-      const ct = document.getElementById("catTable");
-      const rows = Object.entries(sums).sort((a,b)=>b[1]-a[1]);
-      ct.innerHTML = rows.length ? rows.map(([cat,total])=>`
-        <tr>
-          <td>${cat}</td>
-          <td class="right">R$ ${fmt(total)}</td>
-        </tr>
-      `).join("") : `<tr><td colspan="2" class="small">Sem gastos ainda.</td></tr>`;
+    // Seleciona o mês atual se for 2026, senão Janeiro
+    const now = new Date();
+    const defaultMonth = (now.getFullYear() === 2026) ? `2026-${String(now.getMonth()+1).padStart(2,"0")}` : "2026-01";
+    $("monthSelect").value = defaultMonth;
+    $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
+
+    // Estado local
+    let uid = null;
+    let unsubSelected = null;
+    let unsubAllMonths = null;
+
+    // Dados por mês para o gráfico
+    const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, saldoConta:0 }]));
+
+    // Chart
+    let chart = null;
+
+    function calcFields(d){
+      const salario = num(d.salario);
+      const inter = num(d.cartaoInter ?? d.inter);
+      const c6 = num(d.cartaoC6 ?? d.c6);
+      const saldoConta = num(d.saldoConta);
+
+      const totalCartoes = inter + c6;
+      const sobraSalario = salario - totalCartoes;
+      const saldoFinal = saldoConta + sobraSalario;
+
+      return { salario, inter, c6, saldoConta, totalCartoes, sobraSalario, saldoFinal };
     }
 
-    window.togglePaid = (i)=>{ state.fixed[i].paid = !state.fixed[i].paid; recalc(); };
+    function updateKPIs(d){
+      const c = calcFields(d);
 
-    // add variable
-    document.getElementById("addVar").onclick = ()=>{
-      const desc = document.getElementById("vDesc").value.trim();
-      const cat  = document.getElementById("vCat").value.trim() || "Outros";
-      const date = document.getElementById("vDate").value;
-      const value= Number(document.getElementById("vValue").value);
-      if(!desc || !date || !Number.isFinite(value) || value<=0) return alert("Preencha descrição, data e valor.");
-      state.vars.push({desc,cat,date,value});
-      document.getElementById("vDesc").value="";
-      document.getElementById("vCat").value="";
-      document.getElementById("vValue").value="";
-      recalc();
-    };
+      $("totalCartoes").textContent = fmt(c.totalCartoes);
+      $("sobraSalario").textContent = fmt(c.sobraSalario);
+      $("saldoFinal").textContent = fmt(c.saldoFinal);
+      $("saldoFinal2").textContent = fmt(c.saldoFinal);
 
-    // add fixed
-    document.getElementById("addFixed").onclick = ()=>{
-      const desc = document.getElementById("fDesc").value.trim();
-      const cat  = document.getElementById("fCat").value.trim() || "Assinaturas";
-      const date = document.getElementById("fDate").value;
-      const value= Number(document.getElementById("fValue").value);
-      if(!desc || !date || !Number.isFinite(value) || value<=0) return alert("Preencha descrição, data e valor.");
-      state.fixed.push({desc,cat,date,value,paid:false});
-      document.getElementById("fDesc").value="";
-      document.getElementById("fCat").value="";
-      document.getElementById("fValue").value="";
-      recalc();
-    };
+      // hint
+      if (c.sobraSalario >= 0) {
+        $("quickHint").textContent = `Sobrou R$ ${fmt(c.sobraSalario)} do salário; somando com a conta, saldo final projeta R$ ${fmt(c.saldoFinal)}.`;
+      } else {
+        $("quickHint").textContent = `Cartões passaram R$ ${fmt(Math.abs(c.sobraSalario))} do salário; seu saldo final projeta R$ ${fmt(c.saldoFinal)}.`;
+      }
+    }
 
-    // inicial
-    const today = new Date().toISOString().slice(0,10);
-    document.getElementById("vDate").value = today;
-    document.getElementById("fDate").value = today;
-    recalc();
+    function setInputsFromDoc(d){
+      $("salario").value = num(d.salario) || "";
+      $("inter").value = num(d.cartaoInter ?? d.inter) || "";
+      $("c6").value = num(d.cartaoC6 ?? d.c6) || "";
+      $("saldoConta").value = num(d.saldoConta) || "";
+      updateKPIs(d);
+    }
+
+    function currentMonthId(){
+      return $("monthSelect").value;
+    }
+
+    function monthDocRef(monthId){
+      return doc(db, "users", uid, "months", monthId);
+    }
+
+    async function ensureMonthDocsExist(){
+      // Cria os docs faltantes sem sobrescrever os existentes
+      for (const m of months){
+        const ref = monthDocRef(m);
+        const snap = await getDoc(ref);
+        if (!snap.exists()){
+          await setDoc(ref, {
+            salario: 0,
+            cartaoInter: 0,
+            cartaoC6: 0,
+            saldoConta: 0,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
+      }
+    }
+
+    function rebuildChart(){
+      const labels = months.map(m => monthNames[months.indexOf(m)].slice(0,3).toUpperCase());
+
+      const salarios = months.map(m => calcFields({
+        ...monthsData.get(m),
+        cartaoInter: monthsData.get(m).cartaoInter ?? monthsData.get(m).inter,
+        cartaoC6: monthsData.get(m).cartaoC6 ?? monthsData.get(m).c6
+      }).salario);
+
+      const cartoes = months.map(m => calcFields({
+        ...monthsData.get(m),
+        cartaoInter: monthsData.get(m).cartaoInter ?? monthsData.get(m).inter,
+        cartaoC6: monthsData.get(m).cartaoC6 ?? monthsData.get(m).c6
+      }).totalCartoes);
+
+      const saldoFinal = months.map(m => calcFields({
+        ...monthsData.get(m),
+        cartaoInter: monthsData.get(m).cartaoInter ?? monthsData.get(m).inter,
+        cartaoC6: monthsData.get(m).cartaoC6 ?? monthsData.get(m).c6
+      }).saldoFinal);
+
+      const ctx = $("chart");
+
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Salário",
+              data: salarios,
+              borderWidth: 1
+            },
+            {
+              label: "Cartões (Inter + C6)",
+              data: cartoes,
+              borderWidth: 1
+            },
+            {
+              label: "Saldo Final Projetado",
+              data: saldoFinal,
+              type: "line",
+              tension: 0.25,
+              borderWidth: 2,
+              pointRadius: 3,
+              yAxisID: "y"
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: "bottom" },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: R$ ${fmt(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            y: {
+              ticks: { callback: (v) => `R$ ${fmt(v)}` }
+            }
+          }
+        }
+      });
+    }
+
+    function listenAllMonths(){
+      // Escuta a coleção months inteira (atualiza gráfico)
+      const colRef = collection(db, "users", uid, "months");
+      unsubAllMonths = onSnapshot(colRef, (snap) => {
+        snap.forEach(docSnap => {
+          const monthId = docSnap.id;
+          if (!monthsData.has(monthId)) return;
+          const d = docSnap.data() || {};
+          monthsData.set(monthId, {
+            salario: num(d.salario),
+            cartaoInter: num(d.cartaoInter),
+            cartaoC6: num(d.cartaoC6),
+            saldoConta: num(d.saldoConta)
+          });
+        });
+        rebuildChart();
+      });
+    }
+
+    function listenSelectedMonth(){
+      if (unsubSelected) unsubSelected();
+
+      const m = currentMonthId();
+      $("monthTitle").textContent = monthNames[months.indexOf(m)];
+
+      const ref = monthDocRef(m);
+      unsubSelected = onSnapshot(ref, (snap) => {
+        if (!snap.exists()){
+          // se não existir (improvável), zera
+          setInputsFromDoc({salario:0, cartaoInter:0, cartaoC6:0, saldoConta:0});
+          return;
+        }
+        const d = snap.data() || {};
+        setInputsFromDoc(d);
+        $("status").textContent = `Carregado: ${m} • Última atualização: ok`;
+      });
+    }
+
+    async function saveCurrentMonth(){
+      const m = currentMonthId();
+      const ref = monthDocRef(m);
+
+      const payload = {
+        salario: num($("salario").value),
+        cartaoInter: num($("inter").value),
+        cartaoC6: num($("c6").value),
+        saldoConta: num($("saldoConta").value),
+        updatedAt: serverTimestamp()
+      };
+
+      await setDoc(ref, payload, { merge: true });
+
+      // Atualiza KPIs instantâneo
+      updateKPIs(payload);
+      $("status").textContent = `Salvo: ${m}`;
+    }
+
+    async function resetCurrentMonth(){
+      const m = currentMonthId();
+      const ref = monthDocRef(m);
+
+      const payload = {
+        salario: 0,
+        cartaoInter: 0,
+        cartaoC6: 0,
+        saldoConta: 0,
+        updatedAt: serverTimestamp()
+      };
+
+      await setDoc(ref, payload, { merge: true });
+      $("status").textContent = `Zerado: ${m}`;
+    }
+
+    // Eventos UI
+    $("monthSelect").addEventListener("change", () => listenSelectedMonth());
+    $("saveBtn").addEventListener("click", saveCurrentMonth);
+    $("resetBtn").addEventListener("click", resetCurrentMonth);
+
+    // Atualiza KPIs enquanto digita (sem salvar ainda)
+    ["salario","inter","c6","saldoConta"].forEach(id => {
+      $(id).addEventListener("input", () => {
+        updateKPIs({
+          salario: $("salario").value,
+          cartaoInter: $("inter").value,
+          cartaoC6: $("c6").value,
+          saldoConta: $("saldoConta").value
+        });
+      });
+    });
+
+    // Login + start
+    try{
+      $("status").textContent = "Fazendo login anônimo…";
+      const cred = await signInAnonymously(auth);
+      uid = cred.user.uid;
+
+      $("status").textContent = "Inicializando meses de 2026…";
+      await ensureMonthDocsExist();
+
+      $("status").textContent = "Pronto ✅";
+      listenAllMonths();
+      listenSelectedMonth();
+    } catch (e){
+      console.error(e);
+      $("status").textContent = "Erro ao conectar. Veja o console (F12).";
+    }
   </script>
 </body>
 </html>
