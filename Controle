@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Controle de Gastos</title>
+
+<style>
+body { font-family: Arial; max-width:700px; margin:auto; padding:20px }
+input,button { padding:8px; margin:5px }
+table { width:100%; margin-top:20px; border-collapse:collapse }
+td,th { border-bottom:1px solid #ccc; padding:8px }
+</style>
+
+</head>
+<body>
+
+<h2>Controle de Gastos</h2>
+
+<input id="desc" placeholder="Descrição">
+<input id="valor" type="number" placeholder="Valor">
+<button onclick="add()">Adicionar</button>
+
+<h3>Total: R$ <span id="total">0</span></h3>
+
+<table>
+<thead>
+<tr>
+<th>Descrição</th>
+<th>Valor</th>
+<th></th>
+</tr>
+</thead>
+<tbody id="lista"></tbody>
+</table>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+// Seu config
+const firebaseConfig = {
+  apiKey: "AIzaSyCOZap1gB8N8k-3-4nhA-jd2k7HlFJgIes",
+  authDomain: "gastos-92e20.firebaseapp.com",
+  projectId: "gastos-92e20",
+  storageBucket: "gastos-92e20.firebasestorage.app",
+  messagingSenderId: "248552638302",
+  appId: "1:248552638302:web:0588762093eaf4108d31cf"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+// login automático
+const user = await signInAnonymously(auth);
+const uid = user.user.uid;
+
+const gastosRef = collection(db,"users",uid,"gastos");
+
+// adicionar gasto
+window.add = async ()=>{
+
+ const d = desc.value;
+ const v = Number(valor.value);
+
+ if(!d || !v) return alert("Preencha tudo");
+
+ await addDoc(gastosRef,{
+   desc:d,
+   valor:v
+ });
+
+ desc.value="";
+ valor.value="";
+}
+
+// listar gastos em tempo real
+onSnapshot(gastosRef,(snap)=>{
+
+ lista.innerHTML="";
+ let total=0;
+
+ snap.forEach(docu=>{
+   const g = docu.data();
+   total+=g.valor;
+
+   lista.innerHTML+=`
+   <tr>
+     <td>${g.desc}</td>
+     <td>R$ ${g.valor.toFixed(2)}</td>
+     <td><button onclick="del('${docu.id}')">X</button></td>
+   </tr>`;
+ });
+
+ document.getElementById("total").innerText=total.toFixed(2);
+});
+
+window.del = async(id)=>{
+ await deleteDoc(doc(db,"users",uid,"gastos",id));
+}
+
+</script>
+
+</body>
+</html>
