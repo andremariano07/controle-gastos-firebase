@@ -1,107 +1,392 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-br">
 <head>
-<meta charset="UTF-8">
-<title>Controle de Gastos</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Controle de Gastos</title>
+  <style>
+    :root{
+      --bg: #f3dcc6;
+      --panel: #f7e6d6;
+      --line: #d8b79c;
+      --blue: #2b67c9;
+      --blue2:#1f56b3;
+      --text:#1c1c1c;
+      --muted:#6b5a4f;
+      --radius: 14px;
+    }
 
-<style>
-body { font-family: Arial; max-width:700px; margin:auto; padding:20px }
-input,button { padding:8px; margin:5px }
-table { width:100%; margin-top:20px; border-collapse:collapse }
-td,th { border-bottom:1px solid #ccc; padding:8px }
-</style>
+    body{ margin:0; font-family: Arial, sans-serif; background: var(--bg); color:var(--text); }
+    .wrap{ max-width: 1200px; margin: 18px auto; padding: 0 14px 40px; }
 
+    /* topo */
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding: 12px 14px; background: var(--panel); border:1px solid var(--line);
+      border-radius: var(--radius);
+    }
+    .month{
+      font-family: "Brush Script MT", "Comic Sans MS", cursive;
+      font-size: 56px; line-height: 1;
+      margin: 0;
+    }
+    .saldoBox{
+      flex:1;
+      display:flex; align-items:center; justify-content:center;
+      gap:16px;
+      background: var(--blue);
+      color: #fff;
+      border-radius: 12px;
+      padding: 10px 14px;
+      min-height: 54px;
+    }
+    .saldoBox .label{ font-weight:700; letter-spacing:.4px; }
+    .saldoBox .value{ font-weight:800; font-size: 18px; }
+
+    .monthSelect{
+      display:flex; gap:8px; align-items:center;
+    }
+    select, input, button{
+      padding:10px; border-radius: 10px; border:1px solid var(--line);
+      background:#fff; font-size: 14px;
+    }
+    button{ cursor:pointer; background: var(--blue2); color:#fff; border:none; }
+    button:hover{ filter: brightness(1.05); }
+
+    /* grid principal */
+    .grid{
+      margin-top: 14px;
+      display:grid;
+      grid-template-columns: 1.1fr 1.6fr 1fr;
+      gap: 14px;
+      align-items:start;
+    }
+
+    .card{
+      background: var(--panel);
+      border:1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px;
+    }
+    .cardTitle{
+      margin:0 0 10px;
+      font-size: 14px;
+      letter-spacing:.4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    /* tabelas */
+    table{ width:100%; border-collapse: collapse; }
+    th{
+      background: var(--blue);
+      color:#fff; padding: 9px; font-size: 13px; text-align:left;
+      position: sticky; top: 0;
+    }
+    td{ border-bottom: 1px solid var(--line); padding: 8px; font-size: 13px; }
+    tr:last-child td{ border-bottom: none; }
+    .small{ font-size:12px; color:var(--muted); }
+    .right{ text-align:right; }
+    .pill{
+      display:inline-block; padding:3px 8px; border:1px solid var(--line);
+      border-radius: 999px; background:#fff; font-size: 12px;
+    }
+
+    .split{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .totLine{
+      display:flex; justify-content:space-between; align-items:center;
+      margin-top: 10px; padding-top: 10px;
+      border-top: 1px dashed var(--line);
+      font-weight: 800;
+    }
+
+    /* altura das tabelas (scroll) */
+    .tableScroll{ max-height: 360px; overflow:auto; border-radius: 12px; }
+
+    /* área do gráfico (placeholder) */
+    .chartBox{
+      height: 260px; border: 1px dashed var(--line); border-radius: 12px;
+      display:flex; align-items:center; justify-content:center;
+      color: var(--muted); background: #fff7ef;
+    }
+
+    @media (max-width: 980px){
+      .grid{ grid-template-columns: 1fr; }
+      .month{ font-size: 44px; }
+    }
+  </style>
 </head>
 <body>
+  <div class="wrap">
 
-<h2>Controle de Gastos</h2>
+    <!-- Topo -->
+    <div class="topbar">
+      <div style="min-width:280px">
+        <h1 class="month" id="monthTitle">janeiro</h1>
+        <div class="small">Controle mensal de gastos</div>
+      </div>
 
-<input id="desc" placeholder="Descrição">
-<input id="valor" type="number" placeholder="Valor">
-<button onclick="add()">Adicionar</button>
+      <div class="saldoBox">
+        <div class="label">SALDO</div>
+        <div class="value">R$ <span id="saldo">0,00</span></div>
+      </div>
 
-<h3>Total: R$ <span id="total">0</span></h3>
+      <div class="monthSelect">
+        <select id="month">
+          <option value="2026-01">Jan/2026</option>
+          <option value="2026-02">Fev/2026</option>
+          <option value="2026-03">Mar/2026</option>
+        </select>
+        <button id="reload">Carregar</button>
+      </div>
+    </div>
 
-<table>
-<thead>
-<tr>
-<th>Descrição</th>
-<th>Valor</th>
-<th></th>
-</tr>
-</thead>
-<tbody id="lista"></tbody>
-</table>
+    <!-- Grid -->
+    <div class="grid">
 
-<script type="module">
+      <!-- Coluna esquerda -->
+      <div class="card">
+        <p class="cardTitle">Visão geral mensal</p>
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+        <div class="split">
+          <div>
+            <div class="small">Entradas</div>
+            <div style="font-weight:900; font-size:18px">R$ <span id="incomesTotal">0,00</span></div>
+          </div>
+          <div>
+            <div class="small">Saídas</div>
+            <div style="font-weight:900; font-size:18px">R$ <span id="expensesTotal">0,00</span></div>
+          </div>
+          <div>
+            <div class="small">Gastos fixos</div>
+            <div style="font-weight:900">R$ <span id="fixedTotal">0,00</span></div>
+          </div>
+          <div>
+            <div class="small">Gastos variáveis</div>
+            <div style="font-weight:900">R$ <span id="varTotal">0,00</span></div>
+          </div>
+        </div>
 
-// Seu config
-const firebaseConfig = {
-  apiKey: "AIzaSyCOZap1gB8N8k-3-4nhA-jd2k7HlFJgIes",
-  authDomain: "gastos-92e20.firebaseapp.com",
-  projectId: "gastos-92e20",
-  storageBucket: "gastos-92e20.firebasestorage.app",
-  messagingSenderId: "248552638302",
-  appId: "1:248552638302:web:0588762093eaf4108d31cf"
-};
+        <div class="totLine">
+          <div>Saldo do mês</div>
+          <div>R$ <span id="monthBalance">0,00</span></div>
+        </div>
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+        <div style="margin-top:12px">
+          <p class="cardTitle" style="margin-bottom:6px">Entradas do mês</p>
+          <div class="tableScroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Descrição</th><th>Data</th><th class="right">Valor</th>
+                </tr>
+              </thead>
+              <tbody id="incomesTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-// login automático
-const user = await signInAnonymously(auth);
-const uid = user.user.uid;
+      <!-- Meio: Gastos variáveis + fixos -->
+      <div class="card">
+        <p class="cardTitle">Gastos variáveis</p>
 
-const gastosRef = collection(db,"users",uid,"gastos");
+        <!-- Form rápido -->
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+          <input id="vDesc" placeholder="Descrição" style="flex:2; min-width:180px">
+          <input id="vCat" placeholder="Categoria" style="flex:1; min-width:140px">
+          <input id="vDate" type="date" style="min-width:150px">
+          <input id="vValue" type="number" step="0.01" placeholder="Valor" style="min-width:140px">
+          <button id="addVar">Adicionar</button>
+        </div>
 
-// adicionar gasto
-window.add = async ()=>{
+        <div class="tableScroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Descrição</th><th>Categoria</th><th>Data</th><th class="right">Valor</th>
+              </tr>
+            </thead>
+            <tbody id="varsTable"></tbody>
+          </table>
+        </div>
 
- const d = desc.value;
- const v = Number(valor.value);
+        <div class="totLine">
+          <div>Total de gastos variáveis</div>
+          <div>R$ <span id="varTotal2">0,00</span></div>
+        </div>
 
- if(!d || !v) return alert("Preencha tudo");
+        <div style="margin-top:14px"></div>
 
- await addDoc(gastosRef,{
-   desc:d,
-   valor:v
- });
+        <p class="cardTitle">Gastos fixos</p>
 
- desc.value="";
- valor.value="";
-}
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+          <input id="fDesc" placeholder="Descrição" style="flex:2; min-width:180px">
+          <input id="fCat" placeholder="Categoria" style="flex:1; min-width:140px">
+          <input id="fDate" type="date" style="min-width:150px">
+          <input id="fValue" type="number" step="0.01" placeholder="Valor" style="min-width:140px">
+          <button id="addFixed">Adicionar</button>
+        </div>
 
-// listar gastos em tempo real
-onSnapshot(gastosRef,(snap)=>{
+        <div class="tableScroll" style="max-height:280px">
+          <table>
+            <thead>
+              <tr>
+                <th>Descrição</th><th>Categoria</th><th>Data</th><th class="right">Valor</th><th>Pago?</th>
+              </tr>
+            </thead>
+            <tbody id="fixedTable"></tbody>
+          </table>
+        </div>
 
- lista.innerHTML="";
- let total=0;
+        <div class="totLine">
+          <div>Total de gastos fixos</div>
+          <div>R$ <span id="fixedTotal2">0,00</span></div>
+        </div>
+      </div>
 
- snap.forEach(docu=>{
-   const g = docu.data();
-   total+=g.valor;
+      <!-- Direita: por categoria + gráfico -->
+      <div class="card">
+        <p class="cardTitle">Gastos por categoria</p>
+        <div class="tableScroll" style="max-height: 300px">
+          <table>
+            <thead>
+              <tr>
+                <th>Categoria</th><th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody id="catTable"></tbody>
+          </table>
+        </div>
 
-   lista.innerHTML+=`
-   <tr>
-     <td>${g.desc}</td>
-     <td>R$ ${g.valor.toFixed(2)}</td>
-     <td><button onclick="del('${docu.id}')">X</button></td>
-   </tr>`;
- });
+        <div style="margin-top: 12px">
+          <p class="cardTitle">Gráfico</p>
+          <div class="chartBox">Aqui entra o gráfico (pizza/barra)</div>
+        </div>
+      </div>
 
- document.getElementById("total").innerText=total.toFixed(2);
-});
+    </div>
+  </div>
 
-window.del = async(id)=>{
- await deleteDoc(doc(db,"users",uid,"gastos",id));
-}
+  <script>
+    // Só pra “encher” a tela agora (mock). Depois a gente troca por Firestore.
+    const fmt = (n)=> (n||0).toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
+    const state = {
+      incomes: [
+        {desc:"Salário", date:"2026-02-05", value: 2661.81},
+        {desc:"Conta", date:"2026-02-05", value: 4034.81},
+      ],
+      vars: [],
+      fixed: [],
+    };
 
-</script>
+    function recalc(){
+      const incomesTotal = state.incomes.reduce((a,b)=>a+b.value,0);
+      const varTotal = state.vars.reduce((a,b)=>a+b.value,0);
+      const fixedTotal = state.fixed.reduce((a,b)=>a+b.value,0);
+      const expensesTotal = varTotal + fixedTotal;
+      const saldo = incomesTotal - expensesTotal;
 
+      document.getElementById("incomesTotal").textContent = fmt(incomesTotal);
+      document.getElementById("expensesTotal").textContent = fmt(expensesTotal);
+      document.getElementById("varTotal").textContent = fmt(varTotal);
+      document.getElementById("varTotal2").textContent = fmt(varTotal);
+      document.getElementById("fixedTotal").textContent = fmt(fixedTotal);
+      document.getElementById("fixedTotal2").textContent = fmt(fixedTotal);
+      document.getElementById("monthBalance").textContent = fmt(saldo);
+      document.getElementById("saldo").textContent = fmt(saldo);
+
+      // incomes table
+      const it = document.getElementById("incomesTable");
+      it.innerHTML = state.incomes.map(x=>`
+        <tr>
+          <td>${x.desc}</td>
+          <td>${x.date}</td>
+          <td class="right">R$ ${fmt(x.value)}</td>
+        </tr>
+      `).join("");
+
+      // vars
+      const vt = document.getElementById("varsTable");
+      vt.innerHTML = state.vars.map(x=>`
+        <tr>
+          <td>${x.desc}</td>
+          <td><span class="pill">${x.cat}</span></td>
+          <td>${x.date}</td>
+          <td class="right">R$ ${fmt(x.value)}</td>
+        </tr>
+      `).join("");
+
+      // fixed
+      const ft = document.getElementById("fixedTable");
+      ft.innerHTML = state.fixed.map((x,i)=>`
+        <tr>
+          <td>${x.desc}</td>
+          <td><span class="pill">${x.cat}</span></td>
+          <td>${x.date}</td>
+          <td class="right">R$ ${fmt(x.value)}</td>
+          <td>
+            <input type="checkbox" ${x.paid ? "checked":""} onchange="togglePaid(${i})">
+          </td>
+        </tr>
+      `).join("");
+
+      // category summary (vars + fixed)
+      const sums = {};
+      [...state.vars, ...state.fixed].forEach(x=>{
+        sums[x.cat] = (sums[x.cat]||0) + x.value;
+      });
+      const ct = document.getElementById("catTable");
+      const rows = Object.entries(sums).sort((a,b)=>b[1]-a[1]);
+      ct.innerHTML = rows.length ? rows.map(([cat,total])=>`
+        <tr>
+          <td>${cat}</td>
+          <td class="right">R$ ${fmt(total)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="2" class="small">Sem gastos ainda.</td></tr>`;
+    }
+
+    window.togglePaid = (i)=>{ state.fixed[i].paid = !state.fixed[i].paid; recalc(); };
+
+    // add variable
+    document.getElementById("addVar").onclick = ()=>{
+      const desc = document.getElementById("vDesc").value.trim();
+      const cat  = document.getElementById("vCat").value.trim() || "Outros";
+      const date = document.getElementById("vDate").value;
+      const value= Number(document.getElementById("vValue").value);
+      if(!desc || !date || !Number.isFinite(value) || value<=0) return alert("Preencha descrição, data e valor.");
+      state.vars.push({desc,cat,date,value});
+      document.getElementById("vDesc").value="";
+      document.getElementById("vCat").value="";
+      document.getElementById("vValue").value="";
+      recalc();
+    };
+
+    // add fixed
+    document.getElementById("addFixed").onclick = ()=>{
+      const desc = document.getElementById("fDesc").value.trim();
+      const cat  = document.getElementById("fCat").value.trim() || "Assinaturas";
+      const date = document.getElementById("fDate").value;
+      const value= Number(document.getElementById("fValue").value);
+      if(!desc || !date || !Number.isFinite(value) || value<=0) return alert("Preencha descrição, data e valor.");
+      state.fixed.push({desc,cat,date,value,paid:false});
+      document.getElementById("fDesc").value="";
+      document.getElementById("fCat").value="";
+      document.getElementById("fValue").value="";
+      recalc();
+    };
+
+    // inicial
+    const today = new Date().toISOString().slice(0,10);
+    document.getElementById("vDate").value = today;
+    document.getElementById("fDate").value = today;
+    recalc();
+  </script>
 </body>
 </html>
