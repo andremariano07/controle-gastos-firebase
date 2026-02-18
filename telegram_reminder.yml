@@ -1,8 +1,8 @@
-name: Lembrete Telegram dia 20 (09:00)
+name: Lembrete Telegram dia 20 (09:00 Brasil)
 
 on:
   schedule:
-    - cron: "0 12 20 * *"
+    - cron: "0 12 20 * *"   # 12:00 UTC = 09:00 Brasil (UTC-3)
   workflow_dispatch:
 
 jobs:
