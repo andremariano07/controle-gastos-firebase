@@ -110,7 +110,9 @@
     <div class="topbar">
       <div>
         <h1 class="month" id="monthTitle">janeiro</h1>
-        <div class="small">Ano: <b>2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6))</div>
+        <div class="small">
+          Ano: <b>2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6 + Seguro))
+        </div>
       </div>
 
       <div class="saldoBox">
@@ -144,6 +146,13 @@
             <label>Cartão C6 - fatura (R$)</label>
             <input id="c6" type="number" step="0.01" placeholder="Ex: 800.00">
           </div>
+
+          <!-- NOVO -->
+          <div class="field">
+            <label>Seguro do carro (R$)</label>
+            <input id="seguroCarro" type="number" step="0.01" placeholder="Ex: 250.00">
+          </div>
+
           <div class="field">
             <label>Quanto tenho na conta (R$)</label>
             <input id="saldoConta" type="number" step="0.01" placeholder="Ex: 500.00">
@@ -154,11 +163,11 @@
 
         <div style="margin-top:12px" class="kpis">
           <div class="kpi">
-            <div class="t">Total Cartões (Inter + C6)</div>
+            <div class="t">Total Saídas (Inter + C6 + Seguro)</div>
             <div class="v">R$ <span id="totalCartoes">0,00</span></div>
           </div>
           <div class="kpi">
-            <div class="t">Sobra do Salário (Salário − Cartões)</div>
+            <div class="t">Sobra do Salário (Salário − Saídas)</div>
             <div class="v">R$ <span id="sobraSalario">0,00</span></div>
           </div>
           <div class="kpi" style="grid-column: 1 / -1;">
@@ -180,14 +189,14 @@
         <div class="small" style="line-height:1.55">
           <b>Barras (12 meses):</b><br>
           • <b>Salário</b> (positivo)<br>
-          • <b>Cartões (Inter + C6)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
+          • <b>Saídas (Inter + C6 + Seguro)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
 
           <b>Linha (12 meses):</b><br>
-          • <b>Saldo Final Projetado</b> = saldo em conta + (salário − cartões)<br><br>
+          • <b>Saldo Final Projetado</b> = saldo em conta + (salário − saídas)<br><br>
 
           Assim você enxerga fácil:
           <ul>
-            <li>se os cartões estão consumindo muito do salário</li>
+            <li>se as saídas (cartões + seguro) estão consumindo muito do salário</li>
             <li>se o saldo final projetado está subindo ou caindo ao longo de 2026</li>
           </ul>
         </div>
@@ -213,7 +222,6 @@
     import { getFirestore, doc, getDoc, setDoc, collection, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
-    // Seu Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyCOZap1gB8N8k-3-4nhA-jd2k7HlFJgIes",
       authDomain: "gastos-92e20.firebaseapp.com",
@@ -241,7 +249,6 @@
 
     const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
 
-    // UI: preencher select
     months.forEach((id, i) => {
       const opt = document.createElement("option");
       opt.value = id;
@@ -249,49 +256,46 @@
       $("monthSelect").appendChild(opt);
     });
 
-    // Seleciona o mês atual se for 2026, senão Janeiro
     const now = new Date();
     const defaultMonth = (now.getFullYear() === 2026) ? `2026-${String(now.getMonth()+1).padStart(2,"0")}` : "2026-01";
     $("monthSelect").value = defaultMonth;
     $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
 
-    // Estado local
     let uid = null;
     let unsubSelected = null;
     let unsubAllMonths = null;
 
-    // Dados por mês para o gráfico
-    const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, saldoConta:0 }]));
+    // inclui seguroCarro no estado do gráfico
+    const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
 
-    // Chart
     let chart = null;
 
     function calcFields(d){
       const salario = num(d.salario);
       const inter = num(d.cartaoInter ?? d.inter);
       const c6 = num(d.cartaoC6 ?? d.c6);
+      const seguroCarro = num(d.seguroCarro);
       const saldoConta = num(d.saldoConta);
 
-      const totalCartoes = inter + c6;
-      const sobraSalario = salario - totalCartoes;
+      const totalSaidas = inter + c6 + seguroCarro;
+      const sobraSalario = salario - totalSaidas;
       const saldoFinal = saldoConta + sobraSalario;
 
-      return { salario, inter, c6, saldoConta, totalCartoes, sobraSalario, saldoFinal };
+      return { salario, inter, c6, seguroCarro, saldoConta, totalSaidas, sobraSalario, saldoFinal };
     }
 
     function updateKPIs(d){
       const c = calcFields(d);
 
-      $("totalCartoes").textContent = fmt(c.totalCartoes);
+      $("totalCartoes").textContent = fmt(c.totalSaidas);
       $("sobraSalario").textContent = fmt(c.sobraSalario);
       $("saldoFinal").textContent = fmt(c.saldoFinal);
       $("saldoFinal2").textContent = fmt(c.saldoFinal);
 
-      // hint
       if (c.sobraSalario >= 0) {
         $("quickHint").textContent = `Sobrou R$ ${fmt(c.sobraSalario)} do salário; somando com a conta, saldo final projeta R$ ${fmt(c.saldoFinal)}.`;
       } else {
-        $("quickHint").textContent = `Cartões passaram R$ ${fmt(Math.abs(c.sobraSalario))} do salário; seu saldo final projeta R$ ${fmt(c.saldoFinal)}.`;
+        $("quickHint").textContent = `Saídas passaram R$ ${fmt(Math.abs(c.sobraSalario))} do salário; seu saldo final projeta R$ ${fmt(c.saldoFinal)}.`;
       }
     }
 
@@ -299,6 +303,7 @@
       $("salario").value = num(d.salario) || "";
       $("inter").value = num(d.cartaoInter ?? d.inter) || "";
       $("c6").value = num(d.cartaoC6 ?? d.c6) || "";
+      $("seguroCarro").value = num(d.seguroCarro) || "";
       $("saldoConta").value = num(d.saldoConta) || "";
       updateKPIs(d);
     }
@@ -312,7 +317,6 @@
     }
 
     async function ensureMonthDocsExist(){
-      // Cria os docs faltantes sem sobrescrever os existentes
       for (const m of months){
         const ref = monthDocRef(m);
         const snap = await getDoc(ref);
@@ -321,6 +325,7 @@
             salario: 0,
             cartaoInter: 0,
             cartaoC6: 0,
+            seguroCarro: 0,   // NOVO
             saldoConta: 0,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
@@ -338,11 +343,12 @@
         cartaoC6: monthsData.get(m).cartaoC6 ?? monthsData.get(m).c6
       }).salario);
 
-      const cartoes = months.map(m => calcFields({
+      // agora é saídas (Inter + C6 + Seguro)
+      const saidas = months.map(m => calcFields({
         ...monthsData.get(m),
         cartaoInter: monthsData.get(m).cartaoInter ?? monthsData.get(m).inter,
         cartaoC6: monthsData.get(m).cartaoC6 ?? monthsData.get(m).c6
-      }).totalCartoes);
+      }).totalSaidas);
 
       const saldoFinal = months.map(m => calcFields({
         ...monthsData.get(m),
@@ -351,7 +357,6 @@
       }).saldoFinal);
 
       const ctx = $("chart");
-
       if (chart) chart.destroy();
 
       chart = new Chart(ctx, {
@@ -359,16 +364,8 @@
         data: {
           labels,
           datasets: [
-            {
-              label: "Salário",
-              data: salarios,
-              borderWidth: 1
-            },
-            {
-              label: "Cartões (Inter + C6)",
-              data: cartoes,
-              borderWidth: 1
-            },
+            { label: "Salário", data: salarios, borderWidth: 1 },
+            { label: "Saídas (Inter + C6 + Seguro)", data: saidas, borderWidth: 1 },
             {
               label: "Saldo Final Projetado",
               data: saldoFinal,
@@ -385,22 +382,17 @@
           plugins: {
             legend: { position: "bottom" },
             tooltip: {
-              callbacks: {
-                label: (ctx) => `${ctx.dataset.label}: R$ ${fmt(ctx.parsed.y)}`
-              }
+              callbacks: { label: (ctx) => `${ctx.dataset.label}: R$ ${fmt(ctx.parsed.y)}` }
             }
           },
           scales: {
-            y: {
-              ticks: { callback: (v) => `R$ ${fmt(v)}` }
-            }
+            y: { ticks: { callback: (v) => `R$ ${fmt(v)}` } }
           }
         }
       });
     }
 
     function listenAllMonths(){
-      // Escuta a coleção months inteira (atualiza gráfico)
       const colRef = collection(db, "users", uid, "months");
       unsubAllMonths = onSnapshot(colRef, (snap) => {
         snap.forEach(docSnap => {
@@ -411,6 +403,7 @@
             salario: num(d.salario),
             cartaoInter: num(d.cartaoInter),
             cartaoC6: num(d.cartaoC6),
+            seguroCarro: num(d.seguroCarro),
             saldoConta: num(d.saldoConta)
           });
         });
@@ -427,8 +420,7 @@
       const ref = monthDocRef(m);
       unsubSelected = onSnapshot(ref, (snap) => {
         if (!snap.exists()){
-          // se não existir (improvável), zera
-          setInputsFromDoc({salario:0, cartaoInter:0, cartaoC6:0, saldoConta:0});
+          setInputsFromDoc({salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0});
           return;
         }
         const d = snap.data() || {};
@@ -445,13 +437,13 @@
         salario: num($("salario").value),
         cartaoInter: num($("inter").value),
         cartaoC6: num($("c6").value),
+        seguroCarro: num($("seguroCarro").value),  // NOVO
         saldoConta: num($("saldoConta").value),
         updatedAt: serverTimestamp()
       };
 
       await setDoc(ref, payload, { merge: true });
 
-      // Atualiza KPIs instantâneo
       updateKPIs(payload);
       $("status").textContent = `Salvo: ${m}`;
     }
@@ -464,6 +456,7 @@
         salario: 0,
         cartaoInter: 0,
         cartaoC6: 0,
+        seguroCarro: 0, // NOVO
         saldoConta: 0,
         updatedAt: serverTimestamp()
       };
@@ -472,24 +465,23 @@
       $("status").textContent = `Zerado: ${m}`;
     }
 
-    // Eventos UI
     $("monthSelect").addEventListener("change", () => listenSelectedMonth());
     $("saveBtn").addEventListener("click", saveCurrentMonth);
     $("resetBtn").addEventListener("click", resetCurrentMonth);
 
-    // Atualiza KPIs enquanto digita (sem salvar ainda)
-    ["salario","inter","c6","saldoConta"].forEach(id => {
+    // recalcula enquanto digita
+    ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => {
       $(id).addEventListener("input", () => {
         updateKPIs({
           salario: $("salario").value,
           cartaoInter: $("inter").value,
           cartaoC6: $("c6").value,
+          seguroCarro: $("seguroCarro").value,
           saldoConta: $("saldoConta").value
         });
       });
     });
 
-    // Login + start
     try{
       $("status").textContent = "Fazendo login anônimo…";
       const cred = await signInAnonymously(auth);
