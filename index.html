@@ -209,6 +209,23 @@
           <div>Resumo rápido</div>
           <div id="quickHint" class="small"></div>
         </div>
+
+        <!-- ✅ TABELA DO QUE ESTÁ SALVO -->
+        <div style="margin-top:15px;">
+          <p class="cardTitle">Dados Salvos no Firebase (Mês Atual)</p>
+
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden;">
+              <thead style="background:#f0d8c2;">
+                <tr>
+                  <th style="padding:8px; border:1px solid #d8b79c; text-align:left;">Campo</th>
+                  <th style="padding:8px; border:1px solid #d8b79c; text-align:left;">Valor</th>
+                </tr>
+              </thead>
+              <tbody id="dadosSalvosTabela"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -349,6 +366,39 @@
       }
     }
 
+    // ✅ TABELA: mostra o que está salvo
+    function atualizarTabelaSalvos(d, updatedAtMillis = null){
+      const c = calcFields(d);
+      const tbody = $("dadosSalvosTabela");
+      if (!tbody) return;
+
+      const updatedText = updatedAtMillis
+        ? new Date(updatedAtMillis).toLocaleString("pt-BR")
+        : "-";
+
+      const linhas = [
+        ["Salário", `R$ ${fmt(c.salario)}`],
+        ["Cartão Inter", `R$ ${fmt(c.inter)}`],
+        ["Cartão C6", `R$ ${fmt(c.c6)}`],
+        ["Seguro Carro", `R$ ${fmt(c.seguroCarro)}`],
+        ["Saldo em Conta", `R$ ${fmt(c.saldoConta)}`],
+        ["Total Saídas", `R$ ${fmt(c.totalSaidas)}`],
+        ["Sobra do Salário", `R$ ${fmt(c.sobraSalario)}`],
+        ["Saldo Final Projetado", `R$ ${fmt(c.saldoFinal)}`],
+        ["Última Atualização", updatedText]
+      ];
+
+      tbody.innerHTML = "";
+      linhas.forEach(([campo, valor]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td style="padding:8px; border:1px solid #d8b79c;">${campo}</td>
+          <td style="padding:8px; border:1px solid #d8b79c; font-weight:900;">${valor}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
     function setInputsFromDoc(d){
       $("salario").value = num(d.salario) || "";
       $("inter").value = num(d.cartaoInter ?? d.inter) || "";
@@ -356,6 +406,10 @@
       $("seguroCarro").value = num(d.seguroCarro) || "";
       $("saldoConta").value = num(d.saldoConta) || "";
       updateKPIs(d);
+
+      // ao carregar dados do firebase, atualiza a tabela
+      const updatedAtMillis = d?.updatedAt?.toMillis?.() ?? null;
+      atualizarTabelaSalvos(d, updatedAtMillis);
     }
 
     function currentMonthId(){ return $("monthSelect").value; }
@@ -463,11 +517,15 @@
       const ref = monthDocRef(m);
       unsubSelected = onSnapshot(ref, (snap) => {
         if (!snap.exists()){
-          setInputsFromDoc({salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0});
+          const empty = {salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0};
+          setInputsFromDoc(empty);
+          $("status").textContent = `Carregado: ${m} • (vazio)`;
           return;
         }
         const d = snap.data() || {};
         setInputsFromDoc(d);
+        const updatedAtMillis = d?.updatedAt?.toMillis?.() ?? null;
+        atualizarTabelaSalvos(d, updatedAtMillis);
         $("status").textContent = `Carregado: ${m} • Última atualização: ok`;
       });
     }
@@ -498,6 +556,10 @@
         $("status").textContent = "Salvando…";
         await setDoc(ref, payload, { merge: true });
         updateKPIs(payload);
+
+        // ✅ atualiza tabela imediatamente com "agora" (o snapshot depois confirma o horário real do server)
+        atualizarTabelaSalvos(payload, Date.now());
+
         $("status").textContent = `Salvo automaticamente: ${m}`;
       } catch (e){
         console.error(e);
@@ -532,6 +594,10 @@
 
       await setDoc(ref, payload, { merge: true });
       $("status").textContent = `Zerado: ${m}`;
+
+      // atualiza tela na hora (o snapshot já vai vir também)
+      updateKPIs(payload);
+      atualizarTabelaSalvos(payload, Date.now());
     }
 
     $("monthSelect").addEventListener("change", () => listenSelectedMonth());
@@ -540,13 +606,19 @@
     // ✅ Auto-salvar quando digitar (com debounce)
     ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => {
       $(id).addEventListener("input", () => {
-        updateKPIs({
+        const draft = {
           salario: $("salario").value,
           cartaoInter: $("inter").value,
           cartaoC6: $("c6").value,
           seguroCarro: $("seguroCarro").value,
           saldoConta: $("saldoConta").value
-        });
+        };
+
+        updateKPIs(draft);
+
+        // mostra na tabela o que está "indo salvar" (prévia)
+        atualizarTabelaSalvos(draft, null);
+
         scheduleAutosave("input");
       });
 
@@ -558,7 +630,6 @@
 
     // ✅ Salva ao mudar de aba/fechar (best-effort)
     window.addEventListener("beforeunload", () => {
-      // tenta salvar sem bloquear navegação (pode não completar em todos os navegadores)
       saveCurrentMonthAuto("unload");
     });
 
