@@ -152,7 +152,7 @@
 
       <div class="controls">
         <select id="monthSelect"></select>
-        <button id="saveBtn">Salvar mês</button>
+        <!-- ✅ Botão "Salvar mês" removido: agora é salvamento automático -->
         <button id="resetBtn" class="ghost" title="Só zera os campos do mês selecionado (não apaga outros meses).">Zerar mês</button>
         <button id="logoutBtn" class="ghost">Sair</button>
       </div>
@@ -230,7 +230,7 @@
         </div>
 
         <div class="small" style="margin-top:10px">
-          Dica: preencha mês a mês (Jan…Dez). O gráfico se atualiza automaticamente quando salvar.
+          Dica: preencha mês a mês (Jan…Dez). O gráfico se atualiza automaticamente.
         </div>
       </div>
 
@@ -314,6 +314,11 @@
 
     const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
     let chart = null;
+
+    // ====== AUTO SAVE (debounce) ======
+    let autosaveTimer = null;
+    let autosaveInFlight = false;
+    let pendingSaveAfter = false;
 
     function calcFields(d){
       const salario = num(d.salario);
@@ -467,7 +472,9 @@
       });
     }
 
-    async function saveCurrentMonth(){
+    async function saveCurrentMonthAuto(reason = "auto"){
+      if (!uid) return;
+
       const m = currentMonthId();
       const ref = monthDocRef(m);
 
@@ -480,9 +487,34 @@
         updatedAt: serverTimestamp()
       };
 
-      await setDoc(ref, payload, { merge: true });
-      updateKPIs(payload);
-      $("status").textContent = `Salvo: ${m}`;
+      // evita concorrência de salvamentos
+      if (autosaveInFlight) {
+        pendingSaveAfter = true;
+        return;
+      }
+
+      autosaveInFlight = true;
+      try{
+        $("status").textContent = "Salvando…";
+        await setDoc(ref, payload, { merge: true });
+        updateKPIs(payload);
+        $("status").textContent = `Salvo automaticamente: ${m}`;
+      } catch (e){
+        console.error(e);
+        $("status").textContent = "Falha ao salvar. Verifique sua internet e tente novamente.";
+      } finally {
+        autosaveInFlight = false;
+        if (pendingSaveAfter) {
+          pendingSaveAfter = false;
+          // salva de novo rapidamente se o usuário digitou durante o salvamento
+          scheduleAutosave("pending");
+        }
+      }
+    }
+
+    function scheduleAutosave(reason = "typing"){
+      clearTimeout(autosaveTimer);
+      autosaveTimer = setTimeout(() => saveCurrentMonthAuto(reason), 700); // debounce
     }
 
     async function resetCurrentMonth(){
@@ -503,9 +535,9 @@
     }
 
     $("monthSelect").addEventListener("change", () => listenSelectedMonth());
-    $("saveBtn").addEventListener("click", saveCurrentMonth);
     $("resetBtn").addEventListener("click", resetCurrentMonth);
 
+    // ✅ Auto-salvar quando digitar (com debounce)
     ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => {
       $(id).addEventListener("input", () => {
         updateKPIs({
@@ -515,7 +547,19 @@
           seguroCarro: $("seguroCarro").value,
           saldoConta: $("saldoConta").value
         });
+        scheduleAutosave("input");
       });
+
+      // também salva ao sair do campo (blur), caso o usuário digite e troque rápido
+      $(id).addEventListener("blur", () => {
+        saveCurrentMonthAuto("blur");
+      });
+    });
+
+    // ✅ Salva ao mudar de aba/fechar (best-effort)
+    window.addEventListener("beforeunload", () => {
+      // tenta salvar sem bloquear navegação (pode não completar em todos os navegadores)
+      saveCurrentMonthAuto("unload");
     });
 
     $("btnLogin").addEventListener("click", async () => {
