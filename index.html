@@ -152,7 +152,6 @@
 
       <div class="controls">
         <select id="monthSelect"></select>
-        <!-- ✅ Botão "Salvar mês" removido: agora é salvamento automático -->
         <button id="resetBtn" class="ghost" title="Só zera os campos do mês selecionado (não apaga outros meses).">Zerar mês</button>
         <button id="logoutBtn" class="ghost">Sair</button>
       </div>
@@ -166,25 +165,25 @@
         <div class="row">
           <div class="field">
             <label>Salário do mês (R$)</label>
-            <input id="salario" type="number" step="0.01" placeholder="Ex: 3500.00">
+            <input id="salario" type="text" inputmode="decimal" placeholder="R$ 3.500,00" autocomplete="off">
           </div>
           <div class="field">
             <label>Cartão Inter - fatura (R$)</label>
-            <input id="inter" type="number" step="0.01" placeholder="Ex: 1200.00">
+            <input id="inter" type="text" inputmode="decimal" placeholder="R$ 1.200,00" autocomplete="off">
           </div>
           <div class="field">
             <label>Cartão C6 - fatura (R$)</label>
-            <input id="c6" type="number" step="0.01" placeholder="Ex: 800.00">
+            <input id="c6" type="text" inputmode="decimal" placeholder="R$ 800,00" autocomplete="off">
           </div>
 
           <div class="field">
             <label>Seguro do carro (R$)</label>
-            <input id="seguroCarro" type="number" step="0.01" placeholder="Ex: 250.00">
+            <input id="seguroCarro" type="text" inputmode="decimal" placeholder="R$ 250,00" autocomplete="off">
           </div>
 
           <div class="field">
             <label>Quanto tenho na conta (R$)</label>
-            <input id="saldoConta" type="number" step="0.01" placeholder="Ex: 500.00">
+            <input id="saldoConta" type="text" inputmode="decimal" placeholder="R$ 500,00" autocomplete="off">
           </div>
         </div>
 
@@ -210,7 +209,7 @@
           <div id="quickHint" class="small"></div>
         </div>
 
-        <!-- ✅ TABELA DO QUE ESTÁ SALVO -->
+        <!-- TABELA DO QUE ESTÁ SALVO -->
         <div style="margin-top:15px;">
           <p class="cardTitle">Dados Salvos no Firebase (Mês Atual)</p>
 
@@ -286,16 +285,55 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
-
-    // ✅ Força login "por sessão" (fecha o navegador = desloga)
     await setPersistence(auth, browserSessionPersistence);
 
     const $ = (id) => document.getElementById(id);
-    const fmt = (n) => (Number(n)||0).toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
-    const num = (v) => {
-      const n = Number(v);
+
+    // ====== Moeda BR (sempre "R$ 1.200,34") ======
+    function brl(n){
+      const s = (Number(n)||0).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
+      return s.replace(/\u00A0/g, " "); // troca espaço quebrável por espaço normal
+    }
+    function brNum(n){
+      return (Number(n)||0).toLocaleString("pt-BR",{ minimumFractionDigits:2, maximumFractionDigits:2 });
+    }
+
+    // aceita "R$ 1.234,56", "1234,56", "1234.56" etc
+    function parseBRL(value){
+      if (value == null) return 0;
+      let s = String(value).trim();
+      if (!s) return 0;
+      s = s.replace(/\s/g,"").replace(/^R\$/i,"");
+      // remove tudo que não é dígito/virgula/ponto/sinal
+      s = s.replace(/[^\d,.\-]/g, "");
+      // pt-BR: se tem vírgula, ela é decimal; remove pontos (milhar)
+      if (s.includes(",")){
+        s = s.replace(/\./g,"").replace(",",".");
+      }
+      const n = Number(s);
       return Number.isFinite(n) ? n : 0;
-    };
+    }
+
+    // formata no input SEMPRE como "R$ 1.200,34"
+    function formatInputToBRL(el){
+      const n = parseBRL(el.value);
+      el.value = brl(n);
+    }
+
+    // ====== Proteção anti "embolar números" ======
+    // Não sobrescreve o campo enquanto ele estiver em foco (editando).
+    const editing = new Set();
+    function markEditing(el, isOn){
+      if (!el) return;
+      if (isOn) editing.add(el.id);
+      else editing.delete(el.id);
+    }
+    function safeSetInput(id, value){
+      const el = $(id);
+      if (!el) return;
+      if (editing.has(id)) return; // não mexe enquanto digita
+      el.value = brl(value);
+    }
 
     function showLogin(msg){
       $("loginScreen").style.display = "block";
@@ -338,11 +376,11 @@
     let pendingSaveAfter = false;
 
     function calcFields(d){
-      const salario = num(d.salario);
-      const inter = num(d.cartaoInter ?? d.inter);
-      const c6 = num(d.cartaoC6 ?? d.c6);
-      const seguroCarro = num(d.seguroCarro);
-      const saldoConta = num(d.saldoConta);
+      const salario = parseBRL(d.salario);
+      const inter = parseBRL(d.cartaoInter ?? d.inter);
+      const c6 = parseBRL(d.cartaoC6 ?? d.c6);
+      const seguroCarro = parseBRL(d.seguroCarro);
+      const saldoConta = parseBRL(d.saldoConta);
 
       const totalSaidas = inter + c6 + seguroCarro;
       const sobraSalario = salario - totalSaidas;
@@ -354,19 +392,18 @@
     function updateKPIs(d){
       const c = calcFields(d);
 
-      $("totalCartoes").textContent = fmt(c.totalSaidas);
-      $("sobraSalario").textContent = fmt(c.sobraSalario);
-      $("saldoFinal").textContent = fmt(c.saldoFinal);
-      $("saldoFinal2").textContent = fmt(c.saldoFinal);
+      $("totalCartoes").textContent = brNum(c.totalSaidas);
+      $("sobraSalario").textContent = brNum(c.sobraSalario);
+      $("saldoFinal").textContent = brNum(c.saldoFinal);
+      $("saldoFinal2").textContent = brNum(c.saldoFinal);
 
       if (c.sobraSalario >= 0) {
-        $("quickHint").textContent = `Sobrou R$ ${fmt(c.sobraSalario)} do salário; somando com a conta, saldo final projeta R$ ${fmt(c.saldoFinal)}.`;
+        $("quickHint").textContent = `Sobrou ${brl(c.sobraSalario)} do salário; somando com a conta, saldo final projeta ${brl(c.saldoFinal)}.`;
       } else {
-        $("quickHint").textContent = `Saídas passaram R$ ${fmt(Math.abs(c.sobraSalario))} do salário; seu saldo final projeta R$ ${fmt(c.saldoFinal)}.`;
+        $("quickHint").textContent = `Saídas passaram ${brl(Math.abs(c.sobraSalario))} do salário; seu saldo final projeta ${brl(c.saldoFinal)}.`;
       }
     }
 
-    // ✅ TABELA: mostra o que está salvo
     function atualizarTabelaSalvos(d, updatedAtMillis = null){
       const c = calcFields(d);
       const tbody = $("dadosSalvosTabela");
@@ -377,14 +414,14 @@
         : "-";
 
       const linhas = [
-        ["Salário", `R$ ${fmt(c.salario)}`],
-        ["Cartão Inter", `R$ ${fmt(c.inter)}`],
-        ["Cartão C6", `R$ ${fmt(c.c6)}`],
-        ["Seguro Carro", `R$ ${fmt(c.seguroCarro)}`],
-        ["Saldo em Conta", `R$ ${fmt(c.saldoConta)}`],
-        ["Total Saídas", `R$ ${fmt(c.totalSaidas)}`],
-        ["Sobra do Salário", `R$ ${fmt(c.sobraSalario)}`],
-        ["Saldo Final Projetado", `R$ ${fmt(c.saldoFinal)}`],
+        ["Salário", brl(c.salario)],
+        ["Cartão Inter", brl(c.inter)],
+        ["Cartão C6", brl(c.c6)],
+        ["Seguro Carro", brl(c.seguroCarro)],
+        ["Saldo em Conta", brl(c.saldoConta)],
+        ["Total Saídas", brl(c.totalSaidas)],
+        ["Sobra do Salário", brl(c.sobraSalario)],
+        ["Saldo Final Projetado", brl(c.saldoFinal)],
         ["Última Atualização", updatedText]
       ];
 
@@ -400,14 +437,15 @@
     }
 
     function setInputsFromDoc(d){
-      $("salario").value = num(d.salario) || "";
-      $("inter").value = num(d.cartaoInter ?? d.inter) || "";
-      $("c6").value = num(d.cartaoC6 ?? d.c6) || "";
-      $("seguroCarro").value = num(d.seguroCarro) || "";
-      $("saldoConta").value = num(d.saldoConta) || "";
+      // só escreve no input se NÃO estiver em edição (evita "embolando")
+      safeSetInput("salario", d.salario);
+      safeSetInput("inter", d.cartaoInter ?? d.inter);
+      safeSetInput("c6", d.cartaoC6 ?? d.c6);
+      safeSetInput("seguroCarro", d.seguroCarro);
+      safeSetInput("saldoConta", d.saldoConta);
+
       updateKPIs(d);
 
-      // ao carregar dados do firebase, atualiza a tabela
       const updatedAtMillis = d?.updatedAt?.toMillis?.() ?? null;
       atualizarTabelaSalvos(d, updatedAtMillis);
     }
@@ -482,9 +520,9 @@
           responsive: true,
           plugins: {
             legend: { position: "bottom" },
-            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: R$ ${fmt(ctx.parsed.y)}` } }
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${brl(ctx.parsed.y)}` } }
           },
-          scales: { y: { ticks: { callback: (v) => `R$ ${fmt(v)}` } } }
+          scales: { y: { ticks: { callback: (v) => brl(v) } } }
         }
       });
     }
@@ -497,11 +535,11 @@
           if (!monthsData.has(monthId)) return;
           const d = docSnap.data() || {};
           monthsData.set(monthId, {
-            salario: num(d.salario),
-            cartaoInter: num(d.cartaoInter),
-            cartaoC6: num(d.cartaoC6),
-            seguroCarro: num(d.seguroCarro),
-            saldoConta: num(d.saldoConta)
+            salario: parseBRL(d.salario),
+            cartaoInter: parseBRL(d.cartaoInter),
+            cartaoC6: parseBRL(d.cartaoC6),
+            seguroCarro: parseBRL(d.seguroCarro),
+            saldoConta: parseBRL(d.saldoConta)
           });
         });
         rebuildChart();
@@ -524,8 +562,6 @@
         }
         const d = snap.data() || {};
         setInputsFromDoc(d);
-        const updatedAtMillis = d?.updatedAt?.toMillis?.() ?? null;
-        atualizarTabelaSalvos(d, updatedAtMillis);
         $("status").textContent = `Carregado: ${m} • Última atualização: ok`;
       });
     }
@@ -537,15 +573,14 @@
       const ref = monthDocRef(m);
 
       const payload = {
-        salario: num($("salario").value),
-        cartaoInter: num($("inter").value),
-        cartaoC6: num($("c6").value),
-        seguroCarro: num($("seguroCarro").value),
-        saldoConta: num($("saldoConta").value),
+        salario: parseBRL($("salario").value),
+        cartaoInter: parseBRL($("inter").value),
+        cartaoC6: parseBRL($("c6").value),
+        seguroCarro: parseBRL($("seguroCarro").value),
+        saldoConta: parseBRL($("saldoConta").value),
         updatedAt: serverTimestamp()
       };
 
-      // evita concorrência de salvamentos
       if (autosaveInFlight) {
         pendingSaveAfter = true;
         return;
@@ -557,7 +592,7 @@
         await setDoc(ref, payload, { merge: true });
         updateKPIs(payload);
 
-        // ✅ atualiza tabela imediatamente com "agora" (o snapshot depois confirma o horário real do server)
+        // prévia imediata
         atualizarTabelaSalvos(payload, Date.now());
 
         $("status").textContent = `Salvo automaticamente: ${m}`;
@@ -568,7 +603,6 @@
         autosaveInFlight = false;
         if (pendingSaveAfter) {
           pendingSaveAfter = false;
-          // salva de novo rapidamente se o usuário digitou durante o salvamento
           scheduleAutosave("pending");
         }
       }
@@ -576,7 +610,8 @@
 
     function scheduleAutosave(reason = "typing"){
       clearTimeout(autosaveTimer);
-      autosaveTimer = setTimeout(() => saveCurrentMonthAuto(reason), 700); // debounce
+      // ✅ AUMENTADO: mais tempo digitando antes de salvar
+      autosaveTimer = setTimeout(() => saveCurrentMonthAuto(reason), 1500);
     }
 
     async function resetCurrentMonth(){
@@ -595,17 +630,31 @@
       await setDoc(ref, payload, { merge: true });
       $("status").textContent = `Zerado: ${m}`;
 
-      // atualiza tela na hora (o snapshot já vai vir também)
       updateKPIs(payload);
       atualizarTabelaSalvos(payload, Date.now());
+
+      // limpa e formata os inputs (se não estiver editando)
+      ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
     }
 
     $("monthSelect").addEventListener("change", () => listenSelectedMonth());
     $("resetBtn").addEventListener("click", resetCurrentMonth);
 
-    // ✅ Auto-salvar quando digitar (com debounce)
-    ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => {
-      $(id).addEventListener("input", () => {
+    // ====== Inputs: máscara R$ + autosave ======
+    const moneyFields = ["salario","inter","c6","seguroCarro","saldoConta"];
+
+    moneyFields.forEach(id => {
+      const el = $(id);
+
+      // ao focar: marca como editando
+      el.addEventListener("focus", () => markEditing(el, true));
+
+      // enquanto digita: não força reescrever pelo snapshot e salva com debounce maior
+      el.addEventListener("input", () => {
+        // não formata agressivo no meio da digitação (isso costuma "puxar" o cursor)
+        // mas mantém uma limpeza leve (remove letras) pra evitar bagunça
+        el.value = el.value.replace(/[^\d,.\-R$\s]/g, "");
+
         const draft = {
           salario: $("salario").value,
           cartaoInter: $("inter").value,
@@ -615,20 +664,29 @@
         };
 
         updateKPIs(draft);
-
-        // mostra na tabela o que está "indo salvar" (prévia)
         atualizarTabelaSalvos(draft, null);
-
         scheduleAutosave("input");
       });
 
-      // também salva ao sair do campo (blur), caso o usuário digite e troque rápido
-      $(id).addEventListener("blur", () => {
+      // ao sair do campo: aplica formato R$ certinho e salva
+      el.addEventListener("blur", () => {
+        markEditing(el, false);
+        formatInputToBRL(el);
         saveCurrentMonthAuto("blur");
       });
     });
 
-    // ✅ Salva ao mudar de aba/fechar (best-effort)
+    // formata tudo na primeira vez (sem quebrar)
+    function formatAllInputsNow(){
+      moneyFields.forEach(id => {
+        const el = $(id);
+        if (!el) return;
+        if (!el.value) return;
+        if (editing.has(id)) return;
+        formatInputToBRL(el);
+      });
+    }
+
     window.addEventListener("beforeunload", () => {
       saveCurrentMonthAuto("unload");
     });
@@ -676,6 +734,9 @@
         $("status").textContent = "Pronto ✅";
         listenAllMonths();
         listenSelectedMonth();
+
+        // garante formato em tela (quando carregar algo já vem formatado também)
+        setTimeout(formatAllInputsNow, 50);
       } catch(e){
         console.error(e);
         $("status").textContent = "Erro ao carregar dados. Veja o console (F12).";
