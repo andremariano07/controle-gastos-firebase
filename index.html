@@ -93,6 +93,14 @@
       padding:8px 10px;
       background:#fff; border:1px solid var(--line); border-radius:12px;
       font-size:12px; color:var(--muted);
+      word-break: break-word;
+    }
+
+    .secretBox{
+      background:#fff; border:1px dashed var(--line); border-radius:12px;
+      padding:10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:13px;
     }
 
     @media (max-width: 1020px){
@@ -102,6 +110,7 @@
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 
 <body>
@@ -136,70 +145,76 @@
         </div>
 
         <div class="small" style="margin-top:8px; line-height:1.45;">
-          Ao criar conta, você precisa <b>confirmar o e-mail</b> antes de ativar o MFA.
+          MFA exige <b>e-mail verificado</b>. Depois você configura o <b>Google Authenticator</b> (TOTP).
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ENROLL MFA (primeira vez) -->
+  <!-- ENROLL TOTP (Google Authenticator) -->
   <div id="enrollScreen" style="display:none; min-height:100vh; background:var(--bg);">
-    <div style="max-width:420px; margin:0 auto; padding:28px 14px;">
+    <div style="max-width:460px; margin:0 auto; padding:28px 14px;">
       <div class="card">
-        <p class="cardTitle">Ativar MFA (obrigatório)</p>
+        <p class="cardTitle">Ativar MFA (Google Authenticator)</p>
 
-        <div class="small" style="line-height:1.5; margin-bottom:10px;">
-          Para proteger sua conta, confirme um telefone (SMS). Use o formato internacional:
-          <b>+5531999999999</b>
-        </div>
-
-        <div class="field" style="margin-bottom:10px;">
-          <label>Telefone (com DDI)</label>
-          <input id="enrollPhone" type="tel" placeholder="+55 31 99999-9999" autocomplete="tel">
+        <div class="small" style="line-height:1.55; margin-bottom:10px;">
+          1) Clique em <b>Gerar QR</b><br>
+          2) No Google Authenticator, adicione uma conta e escaneie o QR (ou use a chave)<br>
+          3) Digite o código de 6 dígitos e confirme
         </div>
 
         <div class="row" style="margin-top:6px;">
-          <button id="btnEnrollSend">Enviar código</button>
-        </div>
-
-        <div class="field" style="margin-top:10px;">
-          <label>Código SMS</label>
-          <input id="enrollCode" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code">
-        </div>
-
-        <div class="row" style="margin-top:6px;">
-          <button id="btnEnrollVerify">Confirmar e continuar</button>
+          <button id="btnTotpGenerate">Gerar QR</button>
           <button id="btnEnrollLogout" class="ghost">Sair</button>
         </div>
 
-        <div id="recaptcha-container" style="margin-top:10px;"></div>
-        <div class="status" id="enrollStatus" style="margin-top:10px;">Informe seu telefone.</div>
+        <div style="margin-top:12px; display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+          <div style="background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px;">
+            <canvas id="qrCanvas" width="180" height="180" style="display:block;"></canvas>
+            <div class="small" style="margin-top:6px;">Escaneie o QR</div>
+          </div>
+
+          <div style="flex:1; min-width:220px;">
+            <div class="small" style="margin-bottom:6px;"><b>Chave (se não puder escanear):</b></div>
+            <div id="secretKeyBox" class="secretBox">—</div>
+            <div class="small" style="margin-top:8px;">Guarde com cuidado. Não compartilhe.</div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:12px;">
+          <label>Código do Authenticator</label>
+          <input id="totpCode" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code">
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnTotpVerify">Confirmar e continuar</button>
+        </div>
+
+        <div class="status" id="enrollStatus" style="margin-top:10px;">
+          Clique em <b>Gerar QR</b> para iniciar.
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- MFA CHALLENGE (todo login quando MFA existir) -->
+  <!-- MFA CHALLENGE (TOTP no login) -->
   <div id="mfaScreen" style="display:none; min-height:100vh; background:var(--bg);">
     <div style="max-width:420px; margin:0 auto; padding:28px 14px;">
       <div class="card">
         <p class="cardTitle">Verificação em 2 etapas</p>
 
         <div class="small" style="line-height:1.5; margin-bottom:10px;">
-          Enviamos um código SMS para o seu telefone. Digite abaixo:
-        </div>
-
-        <div class="row" style="margin-top:6px;">
-          <button id="btnMfaSend">Reenviar código</button>
-          <button id="btnMfaBack" class="ghost">Voltar</button>
+          Abra seu Authenticator e digite o código:
         </div>
 
         <div class="field" style="margin-top:10px;">
-          <label>Código SMS</label>
+          <label>Código (6 dígitos)</label>
           <input id="mfaCode" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code">
         </div>
 
-        <div class="row" style="margin-top:6px;">
+        <div class="row" style="margin-top:10px;">
           <button id="btnMfaVerify">Confirmar</button>
+          <button id="btnMfaBack" class="ghost">Voltar</button>
         </div>
 
         <div class="status" id="mfaStatus" style="margin-top:10px;">Aguardando…</div>
@@ -281,7 +296,6 @@
           <div id="quickHint" class="small"></div>
         </div>
 
-        <!-- TABELA DO QUE ESTÁ SALVO -->
         <div style="margin-top:15px;">
           <p class="cardTitle">Dados Salvos no Firebase (Mês Atual)</p>
 
@@ -343,17 +357,11 @@
       signOut,
       setPersistence,
       browserSessionPersistence,
-
-      // ✅ email verification helpers
       sendEmailVerification,
       reload,
-
-      // ✅ MFA (SMS)
-      PhoneAuthProvider,
-      RecaptchaVerifier,
       multiFactor,
-      PhoneMultiFactorGenerator,
-      getMultiFactorResolver
+      getMultiFactorResolver,
+      TotpMultiFactorGenerator
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
     const firebaseConfig = {
@@ -381,44 +389,29 @@
         el.style.display = (id === screenId) ? "block" : "none";
       });
     }
-    function showLogin(msg){
-      showOnly("loginScreen");
-      $("loginStatus").textContent = msg || "Digite e-mail e senha.";
-    }
-    function showEnroll(msg){
-      showOnly("enrollScreen");
-      $("enrollStatus").textContent = msg || "Informe seu telefone.";
-    }
-    function showMfa(msg){
-      showOnly("mfaScreen");
-      $("mfaStatus").textContent = msg || "Aguardando…";
-    }
-    function showApp(){
-      showOnly("appScreen");
-    }
+    function showLogin(msg){ showOnly("loginScreen"); $("loginStatus").textContent = msg || "Digite e-mail e senha."; }
+    function showEnroll(msg){ showOnly("enrollScreen"); $("enrollStatus").textContent = msg || "Configure o Authenticator."; }
+    function showMfa(msg){ showOnly("mfaScreen"); $("mfaStatus").textContent = msg || "Digite o código do Authenticator."; }
+    function showApp(){ showOnly("appScreen"); }
 
-    // ====== MFA (reCAPTCHA) ======
-    let recaptchaVerifier = null;
-    function ensureRecaptcha(){
-      if (recaptchaVerifier) return recaptchaVerifier;
-      recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-        size: "invisible"
-      });
-      return recaptchaVerifier;
-    }
-
-    let enrollVerificationId = null;
+    // ====== TOTP MFA state ======
+    let uid = null;
+    let totpSecret = null; // guardamos para finalizar o enroll
     let mfaResolver = null;
-    let mfaVerificationId = null;
+    let selectedTotpHint = null;
 
-    async function sendMfaCode(){
-      const verifier = ensureRecaptcha();
-      const phoneAuthProvider = new PhoneAuthProvider(auth);
-      const hint = mfaResolver.hints[0];
-      mfaVerificationId = await phoneAuthProvider.verifyPhoneNumber(
-        { multiFactorHint: hint, session: mfaResolver.session },
-        verifier
-      );
+    function clearTotpUi(){
+      totpSecret = null;
+      $("secretKeyBox").textContent = "—";
+      const canvas = $("qrCanvas");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      $("totpCode").value = "";
+    }
+
+    async function renderQr(uri){
+      const canvas = $("qrCanvas");
+      await window.QRCode.toCanvas(canvas, uri, { width: 180, margin: 1 });
     }
 
     // ====== Moeda BR ======
@@ -460,10 +453,8 @@
       el.value = brl(value);
     }
 
-    const months = Array.from({length:12}, (_,i)=> {
-      const m = String(i+1).padStart(2,"0");
-      return `2026-${m}`;
-    });
+    // ====== Meses ======
+    const months = Array.from({length:12}, (_,i)=> `2026-${String(i+1).padStart(2,"0")}`);
     const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
 
     months.forEach((id, i) => {
@@ -478,14 +469,13 @@
     $("monthSelect").value = defaultMonth;
     $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
 
-    let uid = null;
+    // ====== Firestore / gráfico ======
     let unsubSelected = null;
     let unsubAllMonths = null;
 
     const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
     let chart = null;
 
-    // ====== AUTO SAVE ======
     let autosaveTimer = null;
     let autosaveInFlight = false;
     let pendingSaveAfter = false;
@@ -677,7 +667,7 @@
       });
     }
 
-    async function saveCurrentMonthAuto(reason = "auto"){
+    async function saveCurrentMonthAuto(){
       if (!uid) return;
 
       const m = currentMonthId();
@@ -706,13 +696,13 @@
         $("status").textContent = "Falha ao salvar. Verifique sua internet e tente novamente.";
       } finally {
         autosaveInFlight = false;
-        if (pendingSaveAfter) { pendingSaveAfter = false; scheduleAutosave("pending"); }
+        if (pendingSaveAfter) { pendingSaveAfter = false; scheduleAutosave(); }
       }
     }
 
-    function scheduleAutosave(reason = "typing"){
+    function scheduleAutosave(){
       clearTimeout(autosaveTimer);
-      autosaveTimer = setTimeout(() => saveCurrentMonthAuto(reason), 1500);
+      autosaveTimer = setTimeout(() => saveCurrentMonthAuto(), 1500);
     }
 
     async function resetCurrentMonth(){
@@ -754,12 +744,12 @@
         };
         updateKPIs(draft);
         atualizarTabelaSalvos(draft, null);
-        scheduleAutosave("input");
+        scheduleAutosave();
       });
       el.addEventListener("blur", () => {
         markEditing(el, false);
         formatInputToBRL(el);
-        saveCurrentMonthAuto("blur");
+        saveCurrentMonthAuto();
       });
     });
 
@@ -771,9 +761,9 @@
       });
     }
 
-    window.addEventListener("beforeunload", () => { saveCurrentMonthAuto("unload"); });
+    window.addEventListener("beforeunload", () => { saveCurrentMonthAuto(); });
 
-    // ====== AUTH ======
+    // ====== AUTH: LOGIN ======
     $("btnLogin").addEventListener("click", async () => {
       try{
         $("loginStatus").textContent = "Entrando…";
@@ -783,14 +773,13 @@
 
         if (e.code === "auth/multi-factor-auth-required"){
           mfaResolver = getMultiFactorResolver(auth, e);
-          showMfa("Enviando código SMS…");
-          try{
-            await sendMfaCode();
-            $("mfaStatus").textContent = "Código enviado. Digite o SMS.";
-          } catch(err){
-            console.error(err);
-            $("mfaStatus").textContent = "Falha ao enviar SMS: " + (err.code || err.message);
+          // procura hint TOTP
+          selectedTotpHint = (mfaResolver.hints || []).find(h => h.factorId === TotpMultiFactorGenerator.FACTOR_ID) || null;
+          if (!selectedTotpHint){
+            showLogin("Sua conta exige MFA, mas nenhum fator TOTP foi encontrado.");
+            return;
           }
+          showMfa("Digite o código do Authenticator.");
           return;
         }
 
@@ -798,12 +787,13 @@
       }
     });
 
+    // ====== AUTH: REGISTER (manda verificação e desloga) ======
     $("btnRegister").addEventListener("click", async () => {
       try{
         $("loginStatus").textContent = "Criando conta…";
         const cred = await createUserWithEmailAndPassword(auth, $("loginEmail").value.trim(), $("loginPass").value);
-        await sendEmailVerification(cred.user);
-        $("loginStatus").textContent = "Conta criada ✅ Verifique seu e-mail e faça login.";
+        await sendEmailVerification(cred.user, { url: window.location.href, handleCodeInApp: false });
+        $("loginStatus").textContent = "Enviado ✅ Verifique seu e-mail e depois faça login.";
         await signOut(auth);
       } catch(e){
         console.error(e);
@@ -811,6 +801,7 @@
       }
     });
 
+    // ====== Reenviar verificação (faz login, envia, desloga) ======
     $("btnResendVerify").addEventListener("click", async () => {
       try{
         const email = $("loginEmail").value.trim();
@@ -823,7 +814,7 @@
 
         $("loginStatus").textContent = "Reenviando verificação…";
         const cred = await signInWithEmailAndPassword(auth, email, pass);
-        await sendEmailVerification(cred.user);
+        await sendEmailVerification(cred.user, { url: window.location.href, handleCodeInApp: false });
         $("loginStatus").textContent = "Enviado ✅ Verifique seu e-mail e depois faça login.";
         await signOut(auth);
       } catch(e){
@@ -834,34 +825,22 @@
 
     $("logoutBtn").addEventListener("click", async () => { await signOut(auth); });
 
-    // MFA screen
-    $("btnMfaSend").addEventListener("click", async () => {
-      try{
-        if (!mfaResolver) return showLogin("Faça login novamente.");
-        $("mfaStatus").textContent = "Enviando código SMS…";
-        await sendMfaCode();
-        $("mfaStatus").textContent = "Código enviado. Digite o SMS.";
-      } catch(e){
-        console.error(e);
-        $("mfaStatus").textContent = "Erro ao reenviar: " + (e.code || e.message);
-      }
-    });
-
+    // ====== MFA CHALLENGE (TOTP) ======
     $("btnMfaVerify").addEventListener("click", async () => {
       try{
         $("mfaStatus").textContent = "Confirmando…";
         const code = $("mfaCode").value.trim();
 
-        if (!mfaResolver || !mfaVerificationId || !code){
-          $("mfaStatus").textContent = "Reenvie o código e preencha o SMS.";
+        if (!mfaResolver || !selectedTotpHint || !code){
+          $("mfaStatus").textContent = "Digite o código do Authenticator.";
           return;
         }
 
-        const cred = PhoneAuthProvider.credential(mfaVerificationId, code);
-        const assertion = PhoneMultiFactorGenerator.assertion(cred);
-
+        const assertion = TotpMultiFactorGenerator.assertionForSignIn(selectedTotpHint.uid, code);
         await mfaResolver.resolveSignIn(assertion);
+
         $("mfaStatus").textContent = "Ok ✅ Entrando…";
+        // onAuthStateChanged assume
       } catch(e){
         console.error(e);
         $("mfaStatus").textContent = "Código inválido/expirado: " + (e.code || e.message);
@@ -870,59 +849,58 @@
 
     $("btnMfaBack").addEventListener("click", () => {
       mfaResolver = null;
-      mfaVerificationId = null;
+      selectedTotpHint = null;
+      $("mfaCode").value = "";
       showLogin("Digite e-mail e senha.");
     });
 
-    // Enroll screen
+    // ====== ENROLL TOTP ======
     $("btnEnrollLogout").addEventListener("click", async () => { await signOut(auth); });
 
-    $("btnEnrollSend").addEventListener("click", async () => {
+    $("btnTotpGenerate").addEventListener("click", async () => {
       try{
-        $("enrollStatus").textContent = "Enviando SMS…";
+        $("enrollStatus").textContent = "Gerando segredo…";
+        clearTotpUi();
 
         const user = auth.currentUser;
-        if (!user) return showLogin("Faça login novamente.");
+        if (!user) { showLogin("Faça login novamente."); return; }
 
-        const phoneNumber = $("enrollPhone").value.trim();
-        if (!phoneNumber || !phoneNumber.startsWith("+")){
-          $("enrollStatus").textContent = "Use DDI no formato: +5531999999999";
+        await reload(user);
+        if (!user.emailVerified){
+          $("enrollStatus").textContent = "Confirme seu e-mail antes de ativar o MFA (use Reenviar verificação).";
           return;
         }
 
-        const verifier = ensureRecaptcha();
         const session = await multiFactor(user).getSession();
+        totpSecret = await TotpMultiFactorGenerator.generateSecret(session);
 
-        const phoneAuthProvider = new PhoneAuthProvider(auth);
-        enrollVerificationId = await phoneAuthProvider.verifyPhoneNumber(
-          { phoneNumber, session },
-          verifier
-        );
+        const uri = totpSecret.generateQrCodeUrl(user.email, "Controle 2026 - Gastos");
+        await renderQr(uri);
 
-        $("enrollStatus").textContent = "Código enviado. Digite o SMS e confirme.";
+        $("secretKeyBox").textContent = totpSecret.secretKey || "(sem chave)";
+        $("enrollStatus").textContent = "QR pronto ✅ Agora digite o código do Authenticator e confirme.";
       } catch(e){
         console.error(e);
-        $("enrollStatus").textContent = "Erro ao enviar SMS: " + (e.code || e.message);
+        $("enrollStatus").textContent = "Erro ao gerar QR/segredo: " + (e.code || e.message);
       }
     });
 
-    $("btnEnrollVerify").addEventListener("click", async () => {
+    $("btnTotpVerify").addEventListener("click", async () => {
       try{
         $("enrollStatus").textContent = "Confirmando…";
 
         const user = auth.currentUser;
-        if (!user) return showLogin("Faça login novamente.");
+        if (!user) { showLogin("Faça login novamente."); return; }
 
-        const code = $("enrollCode").value.trim();
-        if (!enrollVerificationId || !code) {
-          $("enrollStatus").textContent = "Envie o código primeiro e preencha o SMS.";
+        const code = $("totpCode").value.trim();
+        if (!totpSecret || !code){
+          $("enrollStatus").textContent = "Clique em Gerar QR e digite o código do Authenticator.";
           return;
         }
 
-        const cred = PhoneAuthProvider.credential(enrollVerificationId, code);
-        const assertion = PhoneMultiFactorGenerator.assertion(cred);
+        const assertion = TotpMultiFactorGenerator.assertionForEnrollment(totpSecret, code);
+        await multiFactor(user).enroll(assertion, "Authenticator");
 
-        await multiFactor(user).enroll(assertion, "Telefone");
         $("enrollStatus").textContent = "MFA ativado ✅ Carregando…";
 
         showApp();
@@ -932,27 +910,28 @@
         listenAllMonths();
         listenSelectedMonth();
         setTimeout(formatAllInputsNow, 50);
-
       } catch(e){
         console.error(e);
         $("enrollStatus").textContent = "Erro ao confirmar: " + (e.code || e.message);
       }
     });
 
-    // Auth state
+    // ====== AUTH STATE ======
     onAuthStateChanged(auth, async (user) => {
       if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
       if (unsubSelected) { unsubSelected(); unsubSelected = null; }
 
       if (!user){
         uid = null;
+        clearTotpUi();
         showLogin("Faça login para acessar seus dados.");
         return;
       }
 
-      // 🔒 força atualizar estado e exigir e-mail verificado
       await reload(user);
       if (!user.emailVerified){
+        uid = null;
+        clearTotpUi();
         showLogin("Verifique seu e-mail (link de confirmação) e faça login novamente.");
         await signOut(auth);
         return;
@@ -960,10 +939,10 @@
 
       uid = user.uid;
 
-      // ✅ exige MFA cadastrado
       const hasMfa = (user.multiFactor?.enrolledFactors?.length || 0) > 0;
       if (!hasMfa){
-        showEnroll("Ative o MFA para continuar.");
+        clearTotpUi();
+        showEnroll("Ative o MFA (Google Authenticator) para continuar.");
         return;
       }
 
