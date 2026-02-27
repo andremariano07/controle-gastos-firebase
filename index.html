@@ -128,8 +128,15 @@
         </div>
 
         <div class="status" id="loginStatus" style="margin-top:10px;">Digite e-mail e senha.</div>
-        <div class="small" style="margin-top:8px;">
-          Dica: se você já tem conta, clique em <b>Entrar</b>. Se não tem, clique em <b>Criar conta</b>.
+
+        <div class="row" style="margin-top:10px;">
+          <button id="btnResendVerify" class="ghost" title="Se você já criou a conta, reenvie o e-mail de verificação.">
+            Reenviar verificação
+          </button>
+        </div>
+
+        <div class="small" style="margin-top:8px; line-height:1.45;">
+          Ao criar conta, você precisa <b>confirmar o e-mail</b> antes de ativar o MFA.
         </div>
       </div>
     </div>
@@ -142,7 +149,8 @@
         <p class="cardTitle">Ativar MFA (obrigatório)</p>
 
         <div class="small" style="line-height:1.5; margin-bottom:10px;">
-          Para proteger sua conta, confirme um telefone (SMS). Isso será pedido nos próximos logins.
+          Para proteger sua conta, confirme um telefone (SMS). Use o formato internacional:
+          <b>+5531999999999</b>
         </div>
 
         <div class="field" style="margin-bottom:10px;">
@@ -336,6 +344,10 @@
       setPersistence,
       browserSessionPersistence,
 
+      // ✅ email verification helpers
+      sendEmailVerification,
+      reload,
+
       // ✅ MFA (SMS)
       PhoneAuthProvider,
       RecaptchaVerifier,
@@ -402,14 +414,14 @@
     async function sendMfaCode(){
       const verifier = ensureRecaptcha();
       const phoneAuthProvider = new PhoneAuthProvider(auth);
-      const hint = mfaResolver.hints[0]; // primeiro fator cadastrado
+      const hint = mfaResolver.hints[0];
       mfaVerificationId = await phoneAuthProvider.verifyPhoneNumber(
         { multiFactorHint: hint, session: mfaResolver.session },
         verifier
       );
     }
 
-    // ====== Moeda BR (sempre "R$ 1.200,34") ======
+    // ====== Moeda BR ======
     function brl(n){
       const s = (Number(n)||0).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
       return s.replace(/\u00A0/g, " ");
@@ -417,8 +429,6 @@
     function brNum(n){
       return (Number(n)||0).toLocaleString("pt-BR",{ minimumFractionDigits:2, maximumFractionDigits:2 });
     }
-
-    // aceita "R$ 1.234,56", "1234,56", "1234.56" etc
     function parseBRL(value){
       if (value == null) return 0;
       let s = String(value).trim();
@@ -431,7 +441,6 @@
       const n = Number(s);
       return Number.isFinite(n) ? n : 0;
     }
-
     function formatInputToBRL(el){
       const n = parseBRL(el.value);
       el.value = brl(n);
@@ -476,7 +485,7 @@
     const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
     let chart = null;
 
-    // ====== AUTO SAVE (debounce) ======
+    // ====== AUTO SAVE ======
     let autosaveTimer = null;
     let autosaveInFlight = false;
     let pendingSaveAfter = false;
@@ -556,10 +565,7 @@
     }
 
     function currentMonthId(){ return $("monthSelect").value; }
-
-    function monthDocRef(monthId){
-      return doc(db, "users", uid, "months", monthId);
-    }
+    function monthDocRef(monthId){ return doc(db, "users", uid, "months", monthId); }
 
     async function ensureMonthDocsExist(){
       for (const m of months){
@@ -686,17 +692,13 @@
         updatedAt: serverTimestamp()
       };
 
-      if (autosaveInFlight) {
-        pendingSaveAfter = true;
-        return;
-      }
+      if (autosaveInFlight) { pendingSaveAfter = true; return; }
 
       autosaveInFlight = true;
       try{
         $("status").textContent = "Salvando…";
         await setDoc(ref, payload, { merge: true });
         updateKPIs(payload);
-
         atualizarTabelaSalvos(payload, Date.now());
         $("status").textContent = `Salvo automaticamente: ${m}`;
       } catch (e){
@@ -704,10 +706,7 @@
         $("status").textContent = "Falha ao salvar. Verifique sua internet e tente novamente.";
       } finally {
         autosaveInFlight = false;
-        if (pendingSaveAfter) {
-          pendingSaveAfter = false;
-          scheduleAutosave("pending");
-        }
+        if (pendingSaveAfter) { pendingSaveAfter = false; scheduleAutosave("pending"); }
       }
     }
 
@@ -734,24 +733,18 @@
 
       updateKPIs(payload);
       atualizarTabelaSalvos(payload, Date.now());
-
       ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
     }
 
     $("monthSelect").addEventListener("change", () => listenSelectedMonth());
     $("resetBtn").addEventListener("click", resetCurrentMonth);
 
-    // ====== Inputs: máscara R$ + autosave ======
     const moneyFields = ["salario","inter","c6","seguroCarro","saldoConta"];
-
     moneyFields.forEach(id => {
       const el = $(id);
-
       el.addEventListener("focus", () => markEditing(el, true));
-
       el.addEventListener("input", () => {
         el.value = el.value.replace(/[^\d,.\-R$\s]/g, "");
-
         const draft = {
           salario: $("salario").value,
           cartaoInter: $("inter").value,
@@ -759,12 +752,10 @@
           seguroCarro: $("seguroCarro").value,
           saldoConta: $("saldoConta").value
         };
-
         updateKPIs(draft);
         atualizarTabelaSalvos(draft, null);
         scheduleAutosave("input");
       });
-
       el.addEventListener("blur", () => {
         markEditing(el, false);
         formatInputToBRL(el);
@@ -775,18 +766,14 @@
     function formatAllInputsNow(){
       moneyFields.forEach(id => {
         const el = $(id);
-        if (!el) return;
-        if (!el.value) return;
-        if (editing.has(id)) return;
+        if (!el || !el.value || editing.has(id)) return;
         formatInputToBRL(el);
       });
     }
 
-    window.addEventListener("beforeunload", () => {
-      saveCurrentMonthAuto("unload");
-    });
+    window.addEventListener("beforeunload", () => { saveCurrentMonthAuto("unload"); });
 
-    // ====== AUTH: LOGIN / REGISTER / LOGOUT ======
+    // ====== AUTH ======
     $("btnLogin").addEventListener("click", async () => {
       try{
         $("loginStatus").textContent = "Entrando…";
@@ -814,19 +801,40 @@
     $("btnRegister").addEventListener("click", async () => {
       try{
         $("loginStatus").textContent = "Criando conta…";
-        await createUserWithEmailAndPassword(auth, $("loginEmail").value.trim(), $("loginPass").value);
-        // onAuthStateChanged vai cair e pedir enroll se ainda não tiver MFA
+        const cred = await createUserWithEmailAndPassword(auth, $("loginEmail").value.trim(), $("loginPass").value);
+        await sendEmailVerification(cred.user);
+        $("loginStatus").textContent = "Conta criada ✅ Verifique seu e-mail e faça login.";
+        await signOut(auth);
       } catch(e){
         console.error(e);
         $("loginStatus").textContent = "Erro ao criar conta: " + (e.code || e.message);
       }
     });
 
-    $("logoutBtn").addEventListener("click", async () => {
-      await signOut(auth);
+    $("btnResendVerify").addEventListener("click", async () => {
+      try{
+        const email = $("loginEmail").value.trim();
+        const pass = $("loginPass").value;
+
+        if (!email || !pass){
+          $("loginStatus").textContent = "Preencha e-mail e senha para reenviar a verificação.";
+          return;
+        }
+
+        $("loginStatus").textContent = "Reenviando verificação…";
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        await sendEmailVerification(cred.user);
+        $("loginStatus").textContent = "Enviado ✅ Verifique seu e-mail e depois faça login.";
+        await signOut(auth);
+      } catch(e){
+        console.error(e);
+        $("loginStatus").textContent = "Erro ao reenviar: " + (e.code || e.message);
+      }
     });
 
-    // ====== MFA SCREEN EVENTS ======
+    $("logoutBtn").addEventListener("click", async () => { await signOut(auth); });
+
+    // MFA screen
     $("btnMfaSend").addEventListener("click", async () => {
       try{
         if (!mfaResolver) return showLogin("Faça login novamente.");
@@ -854,7 +862,6 @@
 
         await mfaResolver.resolveSignIn(assertion);
         $("mfaStatus").textContent = "Ok ✅ Entrando…";
-        // onAuthStateChanged vai continuar
       } catch(e){
         console.error(e);
         $("mfaStatus").textContent = "Código inválido/expirado: " + (e.code || e.message);
@@ -867,10 +874,8 @@
       showLogin("Digite e-mail e senha.");
     });
 
-    // ====== ENROLL MFA (obrigatório) ======
-    $("btnEnrollLogout").addEventListener("click", async () => {
-      await signOut(auth);
-    });
+    // Enroll screen
+    $("btnEnrollLogout").addEventListener("click", async () => { await signOut(auth); });
 
     $("btnEnrollSend").addEventListener("click", async () => {
       try{
@@ -880,8 +885,8 @@
         if (!user) return showLogin("Faça login novamente.");
 
         const phoneNumber = $("enrollPhone").value.trim();
-        if (!phoneNumber) {
-          $("enrollStatus").textContent = "Informe um telefone válido com DDI (ex: +55...).";
+        if (!phoneNumber || !phoneNumber.startsWith("+")){
+          $("enrollStatus").textContent = "Use DDI no formato: +5531999999999";
           return;
         }
 
@@ -920,10 +925,7 @@
         await multiFactor(user).enroll(assertion, "Telefone");
         $("enrollStatus").textContent = "MFA ativado ✅ Carregando…";
 
-        // força seguir fluxo normal (onAuthStateChanged já está com user logado)
-        // apenas troca tela aqui
         showApp();
-
         $("status").textContent = "Inicializando meses de 2026…";
         await ensureMonthDocsExist();
         $("status").textContent = "Pronto ✅";
@@ -937,7 +939,7 @@
       }
     });
 
-    // ====== AUTH STATE ======
+    // Auth state
     onAuthStateChanged(auth, async (user) => {
       if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
       if (unsubSelected) { unsubSelected(); unsubSelected = null; }
@@ -948,10 +950,18 @@
         return;
       }
 
-      // ✅ Se não tiver MFA cadastrado, obriga enroll
-      const hasMfa = (user.multiFactor?.enrolledFactors?.length || 0) > 0;
+      // 🔒 força atualizar estado e exigir e-mail verificado
+      await reload(user);
+      if (!user.emailVerified){
+        showLogin("Verifique seu e-mail (link de confirmação) e faça login novamente.");
+        await signOut(auth);
+        return;
+      }
+
       uid = user.uid;
 
+      // ✅ exige MFA cadastrado
+      const hasMfa = (user.multiFactor?.enrolledFactors?.length || 0) > 0;
       if (!hasMfa){
         showEnroll("Ative o MFA para continuar.");
         return;
