@@ -110,6 +110,7 @@
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- QRCode: usamos fallback; se este CDN falhar, o sistema continua pela chave -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 
@@ -170,7 +171,7 @@
         <div style="margin-top:12px; display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
           <div style="background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px;">
             <canvas id="qrCanvas" width="180" height="180" style="display:block;"></canvas>
-            <div class="small" style="margin-top:6px;">Escaneie o QR</div>
+            <div class="small" style="margin-top:6px;">Escaneie o QR (ou use a chave)</div>
           </div>
 
           <div style="flex:1; min-width:240px;">
@@ -377,7 +378,7 @@
     function showOnly(id){
       ["loginScreen","enrollScreen","mfaScreen","appScreen"].forEach(x=>{
         const el = $(x); if (!el) return;
-        el.style.display = (x===id) ? (x==="appScreen" ? "block" : "block") : "none";
+        el.style.display = (x===id) ? "block" : "none";
       });
     }
     function showLogin(msg){ showOnly("loginScreen"); $("loginStatus").textContent = msg || "Digite e-mail e senha."; }
@@ -767,7 +768,7 @@
       for (let d=-driftSteps; d<=driftSteps; d++){
         codes.push(await hotp(secretBytes, counter + d, digits));
       }
-      return codes; // lista de códigos válidos (janela)
+      return codes;
     }
 
     function makeOtpAuthUrl(email, secretBase32){
@@ -777,9 +778,73 @@
       return `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
     }
 
-    async function renderQr(uri){
-      const canvas = $("qrCanvas");
-      await window.QRCode.toCanvas(canvas, uri, { width: 180, margin: 1 });
+    // ✅ QR fallback: se a lib não carregar, não trava. Usuário usa a CHAVE.
+    function renderQrOrFallback(uri){
+      return new Promise((resolve) => {
+        const canvas = $("qrCanvas");
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+
+        const QR = window.QRCode;
+        if (!QR){
+          // desenha “QR indisponível”
+          ctx.font = "12px Arial";
+          ctx.fillStyle = "#6b5a4f";
+          ctx.fillText("QR indisponível.", 35, 85);
+          ctx.fillText("Use a chave ao lado.", 25, 105);
+          resolve({ ok:false, reason:"QRCode lib não carregou" });
+          return;
+        }
+
+        // tenta toCanvas (várias builds expõem isso)
+        if (typeof QR.toCanvas === "function"){
+          QR.toCanvas(canvas, uri, { width: 180, margin: 1 }, (err) => {
+            if (err){
+              ctx.font = "12px Arial";
+              ctx.fillStyle = "#6b5a4f";
+              ctx.fillText("Falha ao gerar QR.", 30, 85);
+              ctx.fillText("Use a chave ao lado.", 25, 105);
+              resolve({ ok:false, reason:String(err) });
+            } else resolve({ ok:true });
+          });
+          return;
+        }
+
+        // fallback: algumas builds têm QRCode(canvas, text, cb) ou toDataURL
+        try{
+          if (typeof QR.toDataURL === "function"){
+            QR.toDataURL(uri, { width: 180, margin: 1 }, (err, url) => {
+              if (err || !url){
+                ctx.font = "12px Arial";
+                ctx.fillStyle = "#6b5a4f";
+                ctx.fillText("Falha ao gerar QR.", 30, 85);
+                ctx.fillText("Use a chave ao lado.", 25, 105);
+                resolve({ ok:false, reason:String(err || "sem url") });
+                return;
+              }
+              const img = new Image();
+              img.onload = () => { ctx.drawImage(img, 0, 0, 180, 180); resolve({ ok:true }); };
+              img.onerror = () => {
+                ctx.font = "12px Arial";
+                ctx.fillStyle = "#6b5a4f";
+                ctx.fillText("Falha ao renderizar.", 30, 85);
+                ctx.fillText("Use a chave ao lado.", 25, 105);
+                resolve({ ok:false, reason:"img load fail" });
+              };
+              img.src = url;
+            });
+            return;
+          }
+        } catch(e){
+          // ignore
+        }
+
+        ctx.font = "12px Arial";
+        ctx.fillStyle = "#6b5a4f";
+        ctx.fillText("QR indisponível.", 35, 85);
+        ctx.fillText("Use a chave ao lado.", 25, 105);
+        resolve({ ok:false, reason:"API QRCode não compatível" });
+      });
     }
 
     function isSessionMfaValid(){
@@ -879,10 +944,17 @@
         pendingSecretBase32 = base32Encode(raw);
 
         const uri = makeOtpAuthUrl(user.email || "usuario", pendingSecretBase32);
-        await renderQr(uri);
 
+        // sempre mostra a chave
         $("secretKeyBox").textContent = pendingSecretBase32;
-        $("enrollStatus").textContent = "QR pronto ✅ Abra o Authenticator e digite o código.";
+
+        // tenta QR, mas se falhar não trava
+        const qr = await renderQrOrFallback(uri);
+        if (!qr.ok){
+          $("enrollStatus").textContent = "QR indisponível neste navegador ✅ Use a CHAVE ao lado no Authenticator e digite o código.";
+        } else {
+          $("enrollStatus").textContent = "QR pronto ✅ Abra o Authenticator e digite o código.";
+        }
       } catch(e){
         console.error(e);
         $("enrollStatus").textContent = "Erro ao gerar QR/segredo: " + (e.code || e.message);
@@ -911,7 +983,6 @@
           return;
         }
 
-        // salva config
         await setDoc(mfaDocRef(), {
           enabled: true,
           secretBase32: pendingSecretBase32,
@@ -965,7 +1036,7 @@
       }
     });
 
-    // ====== App init (gated by manual totp) ======
+    // ====== App init ======
     async function goToApp(){
       showApp();
       try{
@@ -1008,7 +1079,6 @@
 
       uid = user.uid;
 
-      // checa se MFA manual está habilitado
       const cfg = await loadCustomTotpConfig();
       if (!cfg?.enabled){
         pendingSecretBase32 = null;
@@ -1017,13 +1087,11 @@
         return;
       }
 
-      // se já validou nesta sessão, entra direto
       if (isSessionMfaValid()){
         await goToApp();
         return;
       }
 
-      // pede código TOTP
       $("mfaCode").value = "";
       showMfa("Digite o código do Authenticator.");
     });
