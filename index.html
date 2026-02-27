@@ -135,6 +135,70 @@
     </div>
   </div>
 
+  <!-- ENROLL MFA (primeira vez) -->
+  <div id="enrollScreen" style="display:none; min-height:100vh; background:var(--bg);">
+    <div style="max-width:420px; margin:0 auto; padding:28px 14px;">
+      <div class="card">
+        <p class="cardTitle">Ativar MFA (obrigatório)</p>
+
+        <div class="small" style="line-height:1.5; margin-bottom:10px;">
+          Para proteger sua conta, confirme um telefone (SMS). Isso será pedido nos próximos logins.
+        </div>
+
+        <div class="field" style="margin-bottom:10px;">
+          <label>Telefone (com DDI)</label>
+          <input id="enrollPhone" type="tel" placeholder="+55 31 99999-9999" autocomplete="tel">
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnEnrollSend">Enviar código</button>
+        </div>
+
+        <div class="field" style="margin-top:10px;">
+          <label>Código SMS</label>
+          <input id="enrollCode" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code">
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnEnrollVerify">Confirmar e continuar</button>
+          <button id="btnEnrollLogout" class="ghost">Sair</button>
+        </div>
+
+        <div id="recaptcha-container" style="margin-top:10px;"></div>
+        <div class="status" id="enrollStatus" style="margin-top:10px;">Informe seu telefone.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MFA CHALLENGE (todo login quando MFA existir) -->
+  <div id="mfaScreen" style="display:none; min-height:100vh; background:var(--bg);">
+    <div style="max-width:420px; margin:0 auto; padding:28px 14px;">
+      <div class="card">
+        <p class="cardTitle">Verificação em 2 etapas</p>
+
+        <div class="small" style="line-height:1.5; margin-bottom:10px;">
+          Enviamos um código SMS para o seu telefone. Digite abaixo:
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnMfaSend">Reenviar código</button>
+          <button id="btnMfaBack" class="ghost">Voltar</button>
+        </div>
+
+        <div class="field" style="margin-top:10px;">
+          <label>Código SMS</label>
+          <input id="mfaCode" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code">
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnMfaVerify">Confirmar</button>
+        </div>
+
+        <div class="status" id="mfaStatus" style="margin-top:10px;">Aguardando…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- APP SCREEN -->
   <div id="appScreen" class="wrap" style="display:none;">
     <div class="topbar">
@@ -270,7 +334,14 @@
       createUserWithEmailAndPassword,
       signOut,
       setPersistence,
-      browserSessionPersistence
+      browserSessionPersistence,
+
+      // ✅ MFA (SMS)
+      PhoneAuthProvider,
+      RecaptchaVerifier,
+      multiFactor,
+      PhoneMultiFactorGenerator,
+      getMultiFactorResolver
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
     const firebaseConfig = {
@@ -289,10 +360,59 @@
 
     const $ = (id) => document.getElementById(id);
 
+    // ====== Screen Router ======
+    function showOnly(screenId){
+      const screens = ["loginScreen","enrollScreen","mfaScreen","appScreen"];
+      screens.forEach(id => {
+        const el = $(id);
+        if (!el) return;
+        el.style.display = (id === screenId) ? "block" : "none";
+      });
+    }
+    function showLogin(msg){
+      showOnly("loginScreen");
+      $("loginStatus").textContent = msg || "Digite e-mail e senha.";
+    }
+    function showEnroll(msg){
+      showOnly("enrollScreen");
+      $("enrollStatus").textContent = msg || "Informe seu telefone.";
+    }
+    function showMfa(msg){
+      showOnly("mfaScreen");
+      $("mfaStatus").textContent = msg || "Aguardando…";
+    }
+    function showApp(){
+      showOnly("appScreen");
+    }
+
+    // ====== MFA (reCAPTCHA) ======
+    let recaptchaVerifier = null;
+    function ensureRecaptcha(){
+      if (recaptchaVerifier) return recaptchaVerifier;
+      recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+        size: "invisible"
+      });
+      return recaptchaVerifier;
+    }
+
+    let enrollVerificationId = null;
+    let mfaResolver = null;
+    let mfaVerificationId = null;
+
+    async function sendMfaCode(){
+      const verifier = ensureRecaptcha();
+      const phoneAuthProvider = new PhoneAuthProvider(auth);
+      const hint = mfaResolver.hints[0]; // primeiro fator cadastrado
+      mfaVerificationId = await phoneAuthProvider.verifyPhoneNumber(
+        { multiFactorHint: hint, session: mfaResolver.session },
+        verifier
+      );
+    }
+
     // ====== Moeda BR (sempre "R$ 1.200,34") ======
     function brl(n){
       const s = (Number(n)||0).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
-      return s.replace(/\u00A0/g, " "); // troca espaço quebrável por espaço normal
+      return s.replace(/\u00A0/g, " ");
     }
     function brNum(n){
       return (Number(n)||0).toLocaleString("pt-BR",{ minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -304,9 +424,7 @@
       let s = String(value).trim();
       if (!s) return 0;
       s = s.replace(/\s/g,"").replace(/^R\$/i,"");
-      // remove tudo que não é dígito/virgula/ponto/sinal
       s = s.replace(/[^\d,.\-]/g, "");
-      // pt-BR: se tem vírgula, ela é decimal; remove pontos (milhar)
       if (s.includes(",")){
         s = s.replace(/\./g,"").replace(",",".");
       }
@@ -314,14 +432,12 @@
       return Number.isFinite(n) ? n : 0;
     }
 
-    // formata no input SEMPRE como "R$ 1.200,34"
     function formatInputToBRL(el){
       const n = parseBRL(el.value);
       el.value = brl(n);
     }
 
     // ====== Proteção anti "embolar números" ======
-    // Não sobrescreve o campo enquanto ele estiver em foco (editando).
     const editing = new Set();
     function markEditing(el, isOn){
       if (!el) return;
@@ -331,18 +447,8 @@
     function safeSetInput(id, value){
       const el = $(id);
       if (!el) return;
-      if (editing.has(id)) return; // não mexe enquanto digita
+      if (editing.has(id)) return;
       el.value = brl(value);
-    }
-
-    function showLogin(msg){
-      $("loginScreen").style.display = "block";
-      $("appScreen").style.display = "none";
-      $("loginStatus").textContent = msg || "Digite e-mail e senha.";
-    }
-    function showApp(){
-      $("loginScreen").style.display = "none";
-      $("appScreen").style.display = "block";
     }
 
     const months = Array.from({length:12}, (_,i)=> {
@@ -437,7 +543,6 @@
     }
 
     function setInputsFromDoc(d){
-      // só escreve no input se NÃO estiver em edição (evita "embolando")
       safeSetInput("salario", d.salario);
       safeSetInput("inter", d.cartaoInter ?? d.inter);
       safeSetInput("c6", d.cartaoC6 ?? d.c6);
@@ -592,9 +697,7 @@
         await setDoc(ref, payload, { merge: true });
         updateKPIs(payload);
 
-        // prévia imediata
         atualizarTabelaSalvos(payload, Date.now());
-
         $("status").textContent = `Salvo automaticamente: ${m}`;
       } catch (e){
         console.error(e);
@@ -610,7 +713,6 @@
 
     function scheduleAutosave(reason = "typing"){
       clearTimeout(autosaveTimer);
-      // ✅ AUMENTADO: mais tempo digitando antes de salvar
       autosaveTimer = setTimeout(() => saveCurrentMonthAuto(reason), 1500);
     }
 
@@ -633,7 +735,6 @@
       updateKPIs(payload);
       atualizarTabelaSalvos(payload, Date.now());
 
-      // limpa e formata os inputs (se não estiver editando)
       ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
     }
 
@@ -646,13 +747,9 @@
     moneyFields.forEach(id => {
       const el = $(id);
 
-      // ao focar: marca como editando
       el.addEventListener("focus", () => markEditing(el, true));
 
-      // enquanto digita: não força reescrever pelo snapshot e salva com debounce maior
       el.addEventListener("input", () => {
-        // não formata agressivo no meio da digitação (isso costuma "puxar" o cursor)
-        // mas mantém uma limpeza leve (remove letras) pra evitar bagunça
         el.value = el.value.replace(/[^\d,.\-R$\s]/g, "");
 
         const draft = {
@@ -668,7 +765,6 @@
         scheduleAutosave("input");
       });
 
-      // ao sair do campo: aplica formato R$ certinho e salva
       el.addEventListener("blur", () => {
         markEditing(el, false);
         formatInputToBRL(el);
@@ -676,7 +772,6 @@
       });
     });
 
-    // formata tudo na primeira vez (sem quebrar)
     function formatAllInputsNow(){
       moneyFields.forEach(id => {
         const el = $(id);
@@ -691,12 +786,27 @@
       saveCurrentMonthAuto("unload");
     });
 
+    // ====== AUTH: LOGIN / REGISTER / LOGOUT ======
     $("btnLogin").addEventListener("click", async () => {
       try{
         $("loginStatus").textContent = "Entrando…";
         await signInWithEmailAndPassword(auth, $("loginEmail").value.trim(), $("loginPass").value);
       } catch(e){
         console.error(e);
+
+        if (e.code === "auth/multi-factor-auth-required"){
+          mfaResolver = getMultiFactorResolver(auth, e);
+          showMfa("Enviando código SMS…");
+          try{
+            await sendMfaCode();
+            $("mfaStatus").textContent = "Código enviado. Digite o SMS.";
+          } catch(err){
+            console.error(err);
+            $("mfaStatus").textContent = "Falha ao enviar SMS: " + (err.code || err.message);
+          }
+          return;
+        }
+
         $("loginStatus").textContent = "Erro ao entrar: " + (e.code || e.message);
       }
     });
@@ -705,6 +815,7 @@
       try{
         $("loginStatus").textContent = "Criando conta…";
         await createUserWithEmailAndPassword(auth, $("loginEmail").value.trim(), $("loginPass").value);
+        // onAuthStateChanged vai cair e pedir enroll se ainda não tiver MFA
       } catch(e){
         console.error(e);
         $("loginStatus").textContent = "Erro ao criar conta: " + (e.code || e.message);
@@ -715,6 +826,118 @@
       await signOut(auth);
     });
 
+    // ====== MFA SCREEN EVENTS ======
+    $("btnMfaSend").addEventListener("click", async () => {
+      try{
+        if (!mfaResolver) return showLogin("Faça login novamente.");
+        $("mfaStatus").textContent = "Enviando código SMS…";
+        await sendMfaCode();
+        $("mfaStatus").textContent = "Código enviado. Digite o SMS.";
+      } catch(e){
+        console.error(e);
+        $("mfaStatus").textContent = "Erro ao reenviar: " + (e.code || e.message);
+      }
+    });
+
+    $("btnMfaVerify").addEventListener("click", async () => {
+      try{
+        $("mfaStatus").textContent = "Confirmando…";
+        const code = $("mfaCode").value.trim();
+
+        if (!mfaResolver || !mfaVerificationId || !code){
+          $("mfaStatus").textContent = "Reenvie o código e preencha o SMS.";
+          return;
+        }
+
+        const cred = PhoneAuthProvider.credential(mfaVerificationId, code);
+        const assertion = PhoneMultiFactorGenerator.assertion(cred);
+
+        await mfaResolver.resolveSignIn(assertion);
+        $("mfaStatus").textContent = "Ok ✅ Entrando…";
+        // onAuthStateChanged vai continuar
+      } catch(e){
+        console.error(e);
+        $("mfaStatus").textContent = "Código inválido/expirado: " + (e.code || e.message);
+      }
+    });
+
+    $("btnMfaBack").addEventListener("click", () => {
+      mfaResolver = null;
+      mfaVerificationId = null;
+      showLogin("Digite e-mail e senha.");
+    });
+
+    // ====== ENROLL MFA (obrigatório) ======
+    $("btnEnrollLogout").addEventListener("click", async () => {
+      await signOut(auth);
+    });
+
+    $("btnEnrollSend").addEventListener("click", async () => {
+      try{
+        $("enrollStatus").textContent = "Enviando SMS…";
+
+        const user = auth.currentUser;
+        if (!user) return showLogin("Faça login novamente.");
+
+        const phoneNumber = $("enrollPhone").value.trim();
+        if (!phoneNumber) {
+          $("enrollStatus").textContent = "Informe um telefone válido com DDI (ex: +55...).";
+          return;
+        }
+
+        const verifier = ensureRecaptcha();
+        const session = await multiFactor(user).getSession();
+
+        const phoneAuthProvider = new PhoneAuthProvider(auth);
+        enrollVerificationId = await phoneAuthProvider.verifyPhoneNumber(
+          { phoneNumber, session },
+          verifier
+        );
+
+        $("enrollStatus").textContent = "Código enviado. Digite o SMS e confirme.";
+      } catch(e){
+        console.error(e);
+        $("enrollStatus").textContent = "Erro ao enviar SMS: " + (e.code || e.message);
+      }
+    });
+
+    $("btnEnrollVerify").addEventListener("click", async () => {
+      try{
+        $("enrollStatus").textContent = "Confirmando…";
+
+        const user = auth.currentUser;
+        if (!user) return showLogin("Faça login novamente.");
+
+        const code = $("enrollCode").value.trim();
+        if (!enrollVerificationId || !code) {
+          $("enrollStatus").textContent = "Envie o código primeiro e preencha o SMS.";
+          return;
+        }
+
+        const cred = PhoneAuthProvider.credential(enrollVerificationId, code);
+        const assertion = PhoneMultiFactorGenerator.assertion(cred);
+
+        await multiFactor(user).enroll(assertion, "Telefone");
+        $("enrollStatus").textContent = "MFA ativado ✅ Carregando…";
+
+        // força seguir fluxo normal (onAuthStateChanged já está com user logado)
+        // apenas troca tela aqui
+        showApp();
+
+        $("status").textContent = "Inicializando meses de 2026…";
+        await ensureMonthDocsExist();
+        $("status").textContent = "Pronto ✅";
+        listenAllMonths();
+        listenSelectedMonth();
+        setTimeout(formatAllInputsNow, 50);
+
+      } catch(e){
+        console.error(e);
+        $("enrollStatus").textContent = "Erro ao confirmar: " + (e.code || e.message);
+      }
+    });
+
+    // ====== AUTH STATE ======
     onAuthStateChanged(auth, async (user) => {
       if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
       if (unsubSelected) { unsubSelected(); unsubSelected = null; }
@@ -725,7 +948,15 @@
         return;
       }
 
+      // ✅ Se não tiver MFA cadastrado, obriga enroll
+      const hasMfa = (user.multiFactor?.enrolledFactors?.length || 0) > 0;
       uid = user.uid;
+
+      if (!hasMfa){
+        showEnroll("Ative o MFA para continuar.");
+        return;
+      }
+
       showApp();
 
       try{
@@ -734,8 +965,6 @@
         $("status").textContent = "Pronto ✅";
         listenAllMonths();
         listenSelectedMonth();
-
-        // garante formato em tela (quando carregar algo já vem formatado também)
         setTimeout(formatAllInputsNow, 50);
       } catch(e){
         console.error(e);
