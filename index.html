@@ -103,6 +103,12 @@
       font-size:13px;
     }
 
+    .toggleLine{
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px;
+    }
+    .toggleLine input[type="checkbox"]{ transform: scale(1.2); }
+
     @media (max-width: 1020px){
       .grid{ grid-template-columns: 1fr; }
       .month{ font-size:44px; }
@@ -110,7 +116,6 @@
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- QRCode: usamos fallback; se este CDN falhar, o sistema continua pela chave -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 
@@ -249,6 +254,7 @@
 
     <div class="grid">
 
+      <!-- CARD 1 -->
       <div class="card">
         <p class="cardTitle">Campos do mês</p>
 
@@ -315,31 +321,62 @@
         </div>
       </div>
 
+      <!-- CARD 2 (NOVO) -->
       <div class="card">
-        <p class="cardTitle">Como o gráfico funciona</p>
-        <div class="small" style="line-height:1.55">
-          <b>Barras (12 meses):</b><br>
-          • <b>Salário</b> (positivo)<br>
-          • <b>Saídas (Inter + C6 + Seguro)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
+        <p class="cardTitle">Relatório Mensal (Telegram + IA)</p>
 
-          <b>Linha (12 meses):</b><br>
-          • <b>Saldo Final Projetado</b> = saldo em conta + (salário − saídas)<br><br>
-
-          Assim você enxerga fácil:
-          <ul>
-            <li>se as saídas (cartões + seguro) estão consumindo muito do salário</li>
-            <li>se o saldo final projetado está subindo ou caindo ao longo de 2026</li>
-          </ul>
+        <div class="toggleLine">
+          <input id="reportEnabled" type="checkbox">
+          <label for="reportEnabled" style="font-weight:900;">Ativar relatório automático todo mês</label>
+          <span class="small">Enviado no dia 1 (09:00) com fechamento do mês anterior.</span>
         </div>
-        <div class="small" style="margin-top:10px">
-          Dica: preencha mês a mês (Jan…Dez). O gráfico se atualiza automaticamente.
+
+        <div class="row" style="margin-top:10px;">
+          <div class="field">
+            <label>Alerta se Saídas passarem de (% do salário)</label>
+            <input id="reportAlertPct" type="number" min="10" max="200" step="1" placeholder="70">
+          </div>
+          <div class="field">
+            <label>Observações (opcional)</label>
+            <input id="reportNotes" type="text" placeholder="Ex: meta reduzir C6 em 15%">
+          </div>
+        </div>
+
+        <div class="status" id="reportStatus">Configuração do relatório: carregando…</div>
+
+        <div class="small" style="margin-top:10px; line-height:1.5;">
+          <b>Como funciona:</b> essa tela só salva suas preferências no Firestore.  
+          O envio para o Telegram é feito por uma <b>Cloud Function agendada</b> (backend),
+          usando o token do bot guardado com segurança (Secrets).
         </div>
       </div>
 
+      <!-- CARD 3 -->
       <div class="card">
         <p class="cardTitle">Gráfico 2026</p>
         <div class="chartBox">
           <canvas id="chart" height="120"></canvas>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <p class="cardTitle">Como o gráfico funciona</p>
+          <div class="small" style="line-height:1.55">
+            <b>Barras (12 meses):</b><br>
+            • <b>Salário</b> (positivo)<br>
+            • <b>Saídas (Inter + C6 + Seguro)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
+
+            <b>Linha (12 meses):</b><br>
+            • <b>Saldo Final Projetado</b> = saldo em conta + (salário − saídas)<br><br>
+
+            Assim você enxerga fácil:
+            <ul>
+              <li>se as saídas (cartões + seguro) estão consumindo muito do salário</li>
+              <li>se o saldo final projetado está subindo ou caindo ao longo de 2026</li>
+            </ul>
+          </div>
+          <div class="small" style="margin-top:10px">
+            Dica: preencha mês a mês (Jan…Dez). O gráfico se atualiza automaticamente.
+          </div>
         </div>
       </div>
 
@@ -359,7 +396,7 @@
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
     const firebaseConfig = {
-      apiKey: "AIzaSyCOZap1gB8N8k-3-4nhA-jd2k7HlFJgIes",
+      apiKey: "AIzaSyCOZap1gB8N8N8k-3-4nhA-jd2k7HlFJgIes",
       authDomain: "gastos-92e20.firebaseapp.com",
       projectId: "gastos-92e20",
       storageBucket: "gastos-92e20.firebasestorage.app",
@@ -439,10 +476,12 @@
     let uid = null;
     let unsubSelected = null;
     let unsubAllMonths = null;
+    let unsubReportSettings = null;
+
     const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
     let chart = null;
 
-    // ===== Autosave =====
+    // ===== Autosave month fields =====
     let autosaveTimer = null;
     let autosaveInFlight = false;
     let pendingSaveAfter = false;
@@ -517,6 +556,7 @@
     function currentMonthId(){ return $("monthSelect").value; }
     function monthDocRef(monthId){ return doc(db, "users", uid, "months", monthId); }
     function mfaDocRef(){ return doc(db, "users", uid, "mfa", "customTotp"); }
+    function reportSettingsRef(){ return doc(db, "users", uid, "settings", "report"); }
 
     async function ensureMonthDocsExist(){
       for (const m of months){
@@ -528,6 +568,20 @@
             createdAt: serverTimestamp(), updatedAt: serverTimestamp()
           });
         }
+      }
+    }
+
+    async function ensureReportSettingsExist(){
+      const ref = reportSettingsRef();
+      const snap = await getDoc(ref);
+      if (!snap.exists()){
+        await setDoc(ref, {
+          enabled: false,
+          alertPct: 70,
+          notes: "",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
       }
     }
 
@@ -681,6 +735,73 @@
       });
     }
 
+    // ====== Report settings (NOVO) ======
+    let reportSaveTimer = null;
+    let reportSaveInFlight = false;
+
+    function setReportUiFromDoc(d){
+      const enabled = !!d.enabled;
+      const alertPct = Number(d.alertPct ?? 70);
+      const notes = String(d.notes ?? "");
+
+      $("reportEnabled").checked = enabled;
+      $("reportAlertPct").value = Number.isFinite(alertPct) ? alertPct : 70;
+      $("reportNotes").value = notes;
+      $("reportStatus").textContent = enabled
+        ? "Relatório ATIVADO ✅ (enviado automaticamente pelo backend)"
+        : "Relatório DESATIVADO ❌";
+    }
+
+    function scheduleReportSave(){
+      clearTimeout(reportSaveTimer);
+      reportSaveTimer = setTimeout(saveReportSettings, 600);
+    }
+
+    async function saveReportSettings(){
+      if (!uid) return;
+      if (reportSaveInFlight) return;
+      reportSaveInFlight = true;
+
+      try{
+        $("reportStatus").textContent = "Salvando preferência do relatório…";
+        const ref = reportSettingsRef();
+        const payload = {
+          enabled: !!$("reportEnabled").checked,
+          alertPct: Math.max(10, Math.min(200, Number($("reportAlertPct").value || 70))),
+          notes: String($("reportNotes").value || "").slice(0, 140),
+          updatedAt: serverTimestamp()
+        };
+        await setDoc(ref, payload, { merge: true });
+        $("reportStatus").textContent = payload.enabled
+          ? "Relatório ATIVADO ✅ (o backend vai enviar todo mês)"
+          : "Relatório DESATIVADO ❌";
+      } catch(e){
+        console.error(e);
+        $("reportStatus").textContent = "Falha ao salvar preferências do relatório.";
+      } finally {
+        reportSaveInFlight = false;
+      }
+    }
+
+    function listenReportSettings(){
+      if (unsubReportSettings) unsubReportSettings();
+      const ref = reportSettingsRef();
+      unsubReportSettings = onSnapshot(ref, (snap) => {
+        if (!snap.exists()){
+          setReportUiFromDoc({ enabled:false, alertPct:70, notes:"" });
+          return;
+        }
+        setReportUiFromDoc(snap.data() || {});
+      });
+    }
+
+    ["reportEnabled","reportAlertPct","reportNotes"].forEach(id => {
+      const el = $(id);
+      el.addEventListener("input", scheduleReportSave);
+      el.addEventListener("change", scheduleReportSave);
+      el.addEventListener("blur", saveReportSettings);
+    });
+
     // ====== TOTP manual (WebCrypto) ======
     const ISSUER = "Controle 2026 - Gastos";
     const SESSION_KEY = "mfa_verified_until_ms";
@@ -778,7 +899,6 @@
       return `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
     }
 
-    // ✅ QR fallback: se a lib não carregar, não trava. Usuário usa a CHAVE.
     function renderQrOrFallback(uri){
       return new Promise((resolve) => {
         const canvas = $("qrCanvas");
@@ -787,7 +907,6 @@
 
         const QR = window.QRCode;
         if (!QR){
-          // desenha “QR indisponível”
           ctx.font = "12px Arial";
           ctx.fillStyle = "#6b5a4f";
           ctx.fillText("QR indisponível.", 35, 85);
@@ -796,7 +915,6 @@
           return;
         }
 
-        // tenta toCanvas (várias builds expõem isso)
         if (typeof QR.toCanvas === "function"){
           QR.toCanvas(canvas, uri, { width: 180, margin: 1 }, (err) => {
             if (err){
@@ -810,7 +928,6 @@
           return;
         }
 
-        // fallback: algumas builds têm QRCode(canvas, text, cb) ou toDataURL
         try{
           if (typeof QR.toDataURL === "function"){
             QR.toDataURL(uri, { width: 180, margin: 1 }, (err, url) => {
@@ -835,9 +952,7 @@
             });
             return;
           }
-        } catch(e){
-          // ignore
-        }
+        } catch(e){}
 
         ctx.font = "12px Arial";
         ctx.fillStyle = "#6b5a4f";
@@ -940,18 +1055,16 @@
         clearTotpUi();
         $("enrollStatus").textContent = "Gerando segredo…";
 
-        const raw = crypto.getRandomValues(new Uint8Array(20)); // 160-bit
+        const raw = crypto.getRandomValues(new Uint8Array(20));
         pendingSecretBase32 = base32Encode(raw);
 
         const uri = makeOtpAuthUrl(user.email || "usuario", pendingSecretBase32);
 
-        // sempre mostra a chave
         $("secretKeyBox").textContent = pendingSecretBase32;
 
-        // tenta QR, mas se falhar não trava
         const qr = await renderQrOrFallback(uri);
         if (!qr.ok){
-          $("enrollStatus").textContent = "QR indisponível neste navegador ✅ Use a CHAVE ao lado no Authenticator e digite o código.";
+          $("enrollStatus").textContent = "QR indisponível ✅ Use a CHAVE ao lado no Authenticator e digite o código.";
         } else {
           $("enrollStatus").textContent = "QR pronto ✅ Abra o Authenticator e digite o código.";
         }
@@ -992,7 +1105,7 @@
         }, { merge: true });
 
         pendingSecretBase32 = null;
-        setSessionMfaValid(360); // 6h nessa sessão
+        setSessionMfaValid(360);
 
         $("enrollStatus").textContent = "Ativado ✅ Entrando…";
         await goToApp();
@@ -1027,7 +1140,7 @@
           return;
         }
 
-        setSessionMfaValid(360); // 6h
+        setSessionMfaValid(360);
         $("mfaStatus").textContent = "Ok ✅ Entrando…";
         await goToApp();
       } catch(e){
@@ -1042,9 +1155,17 @@
       try{
         $("status").textContent = "Inicializando meses de 2026…";
         await ensureMonthDocsExist();
+
+        // ✅ Novo: cria config do relatório se não existir
+        await ensureReportSettingsExist();
+
         $("status").textContent = "Pronto ✅";
         listenAllMonths();
         listenSelectedMonth();
+
+        // ✅ Novo: escuta config do relatório
+        listenReportSettings();
+
         setTimeout(formatAllInputsNow, 50);
       } catch(e){
         console.error(e);
@@ -1056,6 +1177,7 @@
     onAuthStateChanged(auth, async (user) => {
       if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
       if (unsubSelected) { unsubSelected(); unsubSelected = null; }
+      if (unsubReportSettings) { unsubReportSettings(); unsubReportSettings = null; }
 
       if (!user){
         uid = null;
