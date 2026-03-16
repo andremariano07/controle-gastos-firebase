@@ -7,8 +7,8 @@
 
   <style>
     :root{
-      --bg:#f3dcc6; --panel:#f7e6d6; --line:#d8b79c;
-      --blue:#2b67c9; --blue2:#1f56b3; --text:#1c1c1c; --muted:#6b5a4f;
+      --bg:#e9ecef; --panel:#f8f9fa; --line:#cfd4da;
+      --blue:#2b67c9; --blue2:#1f56b3; --text:#1c1c1c; --muted:#5f6b76;
       --radius:14px;
     }
     body{ margin:0; font-family: Arial, sans-serif; background:var(--bg); color:var(--text); }
@@ -309,10 +309,10 @@
           <p class="cardTitle">Dados Salvos no Firebase (Mês Atual)</p>
           <div style="overflow-x:auto;">
             <table style="width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden;">
-              <thead style="background:#f0d8c2;">
+              <thead style="background:#dde2e7;">
                 <tr>
-                  <th style="padding:8px; border:1px solid #d8b79c; text-align:left;">Campo</th>
-                  <th style="padding:8px; border:1px solid #d8b79c; text-align:left;">Valor</th>
+                  <th style="padding:8px; border:1px solid #cfd4da; text-align:left;">Campo</th>
+                  <th style="padding:8px; border:1px solid #cfd4da; text-align:left;">Valor</th>
                 </tr>
               </thead>
               <tbody id="dadosSalvosTabela"></tbody>
@@ -411,7 +411,6 @@
 
     const $ = (id) => document.getElementById(id);
 
-    // ===== Screen router =====
     function showOnly(id){
       ["loginScreen","enrollScreen","mfaScreen","appScreen"].forEach(x=>{
         const el = $(x); if (!el) return;
@@ -423,7 +422,6 @@
     function showMfa(msg){ showOnly("mfaScreen"); $("mfaStatus").textContent = msg || "Digite o código do Authenticator."; }
     function showApp(){ showOnly("appScreen"); }
 
-    // ===== BRL helpers =====
     function brl(n){
       const s = (Number(n)||0).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
       return s.replace(/\u00A0/g, " ");
@@ -446,7 +444,6 @@
       el.value = brl(n);
     }
 
-    // ===== Anti "embolar" =====
     const editing = new Set();
     function markEditing(el, on){ if(on) editing.add(el.id); else editing.delete(el.id); }
     function safeSetInput(id, value){
@@ -456,7 +453,6 @@
       el.value = brl(value);
     }
 
-    // ===== Months =====
     const months = Array.from({length:12}, (_,i)=> `2026-${String(i+1).padStart(2,"0")}`);
     const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
 
@@ -472,7 +468,6 @@
     $("monthSelect").value = defaultMonth;
     $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
 
-    // ===== Firestore state =====
     let uid = null;
     let unsubSelected = null;
     let unsubAllMonths = null;
@@ -481,7 +476,6 @@
     const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
     let chart = null;
 
-    // ===== Autosave month fields =====
     let autosaveTimer = null;
     let autosaveInFlight = false;
     let pendingSaveAfter = false;
@@ -534,8 +528,8 @@
       linhas.forEach(([campo, valor]) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td style="padding:8px; border:1px solid #d8b79c;">${campo}</td>
-          <td style="padding:8px; border:1px solid #d8b79c; font-weight:900;">${valor}</td>
+          <td style="padding:8px; border:1px solid #cfd4da;">${campo}</td>
+          <td style="padding:8px; border:1px solid #cfd4da; font-weight:900;">${valor}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -735,7 +729,6 @@
       });
     }
 
-    // ====== Report settings (NOVO) ======
     let reportSaveTimer = null;
     let reportSaveInFlight = false;
 
@@ -802,7 +795,6 @@
       el.addEventListener("blur", saveReportSettings);
     });
 
-    // ====== TOTP manual (WebCrypto) ======
     const ISSUER = "Controle 2026 - Gastos";
     const SESSION_KEY = "mfa_verified_until_ms";
 
@@ -908,7 +900,7 @@
         const QR = window.QRCode;
         if (!QR){
           ctx.font = "12px Arial";
-          ctx.fillStyle = "#6b5a4f";
+          ctx.fillStyle = "#5f6b76";
           ctx.fillText("QR indisponível.", 35, 85);
           ctx.fillText("Use a chave ao lado.", 25, 105);
           resolve({ ok:false, reason:"QRCode lib não carregou" });
@@ -919,7 +911,7 @@
           QR.toCanvas(canvas, uri, { width: 180, margin: 1 }, (err) => {
             if (err){
               ctx.font = "12px Arial";
-              ctx.fillStyle = "#6b5a4f";
+              ctx.fillStyle = "#5f6b76";
               ctx.fillText("Falha ao gerar QR.", 30, 85);
               ctx.fillText("Use a chave ao lado.", 25, 105);
               resolve({ ok:false, reason:String(err) });
@@ -933,7 +925,7 @@
             QR.toDataURL(uri, { width: 180, margin: 1 }, (err, url) => {
               if (err || !url){
                 ctx.font = "12px Arial";
-                ctx.fillStyle = "#6b5a4f";
+                ctx.fillStyle = "#5f6b76";
                 ctx.fillText("Falha ao gerar QR.", 30, 85);
                 ctx.fillText("Use a chave ao lado.", 25, 105);
                 resolve({ ok:false, reason:String(err || "sem url") });
@@ -943,7 +935,7 @@
               img.onload = () => { ctx.drawImage(img, 0, 0, 180, 180); resolve({ ok:true }); };
               img.onerror = () => {
                 ctx.font = "12px Arial";
-                ctx.fillStyle = "#6b5a4f";
+                ctx.fillStyle = "#5f6b76";
                 ctx.fillText("Falha ao renderizar.", 30, 85);
                 ctx.fillText("Use a chave ao lado.", 25, 105);
                 resolve({ ok:false, reason:"img load fail" });
@@ -955,7 +947,7 @@
         } catch(e){}
 
         ctx.font = "12px Arial";
-        ctx.fillStyle = "#6b5a4f";
+        ctx.fillStyle = "#5f6b76";
         ctx.fillText("QR indisponível.", 35, 85);
         ctx.fillText("Use a chave ao lado.", 25, 105);
         resolve({ ok:false, reason:"API QRCode não compatível" });
@@ -980,7 +972,6 @@
       return snap.data() || { enabled:false };
     }
 
-    // ====== AUTH buttons ======
     $("btnLogin").addEventListener("click", async () => {
       try{
         $("loginStatus").textContent = "Entrando…";
@@ -1038,7 +1029,6 @@
       await signOut(auth);
     });
 
-    // ====== Manual TOTP enroll ======
     let pendingSecretBase32 = null;
 
     $("btnTotpGenerate").addEventListener("click", async () => {
@@ -1115,7 +1105,6 @@
       }
     });
 
-    // ====== Manual TOTP challenge ======
     $("btnMfaVerify").addEventListener("click", async () => {
       try{
         const user = auth.currentUser;
@@ -1149,21 +1138,16 @@
       }
     });
 
-    // ====== App init ======
     async function goToApp(){
       showApp();
       try{
         $("status").textContent = "Inicializando meses de 2026…";
         await ensureMonthDocsExist();
-
-        // ✅ Novo: cria config do relatório se não existir
         await ensureReportSettingsExist();
 
         $("status").textContent = "Pronto ✅";
         listenAllMonths();
         listenSelectedMonth();
-
-        // ✅ Novo: escuta config do relatório
         listenReportSettings();
 
         setTimeout(formatAllInputsNow, 50);
@@ -1173,7 +1157,6 @@
       }
     }
 
-    // ====== Auth state ======
     onAuthStateChanged(auth, async (user) => {
       if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
       if (unsubSelected) { unsubSelected(); unsubSelected = null; }
@@ -1218,7 +1201,6 @@
       showMfa("Digite o código do Authenticator.");
     });
 
-    // start
     showLogin("Verificando sessão…");
   </script>
 </body>
