@@ -1,158 +1,184 @@
 const admin = require("firebase-admin");
 
-// ENV
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID;
 const REPORT_UID = process.env.REPORT_UID;
+const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID)
-  throw new Error("Erro: Telegram não configurado");
+if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+  throw new Error("Missing Telegram secrets");
+}
+if (!FIREBASE_PROJECT_ID) {
+  throw new Error("Missing FIREBASE_PROJECT_ID");
+}
+if (!REPORT_UID) {
+  throw new Error("Missing REPORT_UID");
+}
+if (!FIREBASE_SERVICE_ACCOUNT_JSON) {
+  throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
+}
 
-if (!FIREBASE_PROJECT_ID || !REPORT_UID)
-  throw new Error("Erro: Firebase não configurado");
+const serviceAccount = JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON);
 
-// Firebase
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "{}");
-
-if (!serviceAccount.client_email)
-  throw new Error("Erro: FIREBASE_SERVICE_ACCOUNT_JSON inválido");
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  projectId: FIREBASE_PROJECT_ID,
-});
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    projectId: FIREBASE_PROJECT_ID,
+  });
+}
 
 const db = admin.firestore();
 
-// Função para pegar mês
-function getMonthRange(year, month) {
-  const start = new Date(Date.UTC(year, month, 1));
-  const end = new Date(Date.UTC(year, month + 1, 1));
-  return { start, end };
-}
-
-// Soma despesas
-async function getTotal(uid, year, month) {
-  const { start, end } = getMonthRange(year, month);
-
-  const snapshot = await db
-    .collection("usuarios")
-    .doc(uid)
-    .collection("transacoes")
-    .where("data", ">=", admin.firestore.Timestamp.fromDate(start))
-    .where("data", "<", admin.firestore.Timestamp.fromDate(end))
-    .get();
-
-  let total = 0;
-
-  snapshot.forEach((doc) => {
-    const d = doc.data();
-
-    const valor = Number(d.valor || 0);
-    const tipo = String(d.tipo || "").toLowerCase();
-
-    if (tipo === "despesa") {
-      total += valor;
-    }
-  });
-
-  return total;
-}
-
-// Telegram
-async function sendTelegram(text) {
-  const res = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        parse_mode: "HTML",
-      }),
-    }
-  );
-
-  const data = await res.json();
-
-  if (!data.ok) {
-    throw new Error("Erro Telegram: " + JSON.stringify(data));
-  }
-}
-
-// Formatar dinheiro
-function money(v) {
+function formatMoney(value) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(v);
+  }).format(Number(value) || 0);
 }
 
-// MAIN
-async function main() {
-  const now = new Date();
+function monthIdFromDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
 
-  // mês passado
-  const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+function getLastMonthId(now = new Date()) {
+  return monthIdFromDate(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+}
 
-  // mês anterior
-  const prevMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1));
+function getPreviousMonthId(now = new Date()) {
+  return monthIdFromDate(new Date(now.getFullYear(), now.getMonth() - 2, 1));
+}
 
-  const totalLast = await getTotal(
-    REPORT_UID,
-    lastMonthDate.getUTCFullYear(),
-    lastMonthDate.getUTCMonth()
-  );
+function normalizeMonthData(data = {}) {
+  const salario = Number(data.salario || 0);
+  const inter = Number(data.cartaoInter ?? data.inter ?? 0);
+  const c6 = Number(data.cartaoC6 ?? data.c6 ?? 0);
+  const seguro = Number(data.seguroCarro || 0);
+  const saldoConta = Number(data.saldoConta || 0);
 
-  const totalPrev = await getTotal(
-    REPORT_UID,
-    prevMonthDate.getUTCFullYear(),
-    prevMonthDate.getUTCMonth()
-  );
+  const saidas = inter + c6 + seguro;
+  const sobra = salario - saidas;
+  const saldoFinal = saldoConta + sobra;
 
-  const diff = totalPrev - totalLast;
+  return {
+    salario,
+    inter,
+    c6,
+    seguro,
+    saldoConta,
+    saidas,
+    sobra,
+    saldoFinal,
+  };
+}
 
-  let resultado = "";
+async function getMonthData(uid, monthId) {
+  const ref = db.doc(`users/${uid}/months/${monthId}`);
+  const snap = await ref.get();
 
-  if (diff > 0) {
-    const percent = totalPrev > 0 ? ((diff / totalPrev) * 100).toFixed(2) : "0.00";
-    resultado = `✅ Você gastou <b>${money(diff)}</b> a menos\n📉 Redução de <b>${percent}%</b>`;
-  } else if (diff < 0) {
-    const aumento = Math.abs(diff);
-    const percent = totalPrev > 0 ? ((aumento / totalPrev) * 100).toFixed(2) : "0.00";
-    resultado = `⚠️ Você gastou <b>${money(aumento)}</b> a mais\n📈 Aumento de <b>${percent}%</b>`;
-  } else {
-    resultado = `➖ Você gastou exatamente o mesmo valor`;
+  if (!snap.exists) {
+    return {
+      monthId,
+      exists: false,
+      raw: {},
+      ...normalizeMonthData({}),
+    };
   }
 
-  const mesAtual = lastMonthDate.toLocaleString("pt-BR", {
-    month: "long",
-    year: "numeric",
-  });
-
-  const mesAnterior = prevMonthDate.toLocaleString("pt-BR", {
-    month: "long",
-    year: "numeric",
-  });
-
-  const mensagem =
-`📊 <b>Relatório de Gastos</b>
-
-🗓 ${mesAtual}: ${money(totalLast)}
-🗓 ${mesAnterior}: ${money(totalPrev)}
-
-${resultado}`;
-
-  await sendTelegram(mensagem);
-
-  console.log("Relatório enviado!");
+  const raw = snap.data() || {};
+  return {
+    monthId,
+    exists: true,
+    raw,
+    ...normalizeMonthData(raw),
+  };
 }
 
-main().catch((e) => {
-  console.error(e);
+async function sendTelegram(text) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+  });
+
+  const data = await res.json();
+
+  if (!res.ok || !data.ok) {
+    throw new Error(`Telegram error: ${JSON.stringify(data)}`);
+  }
+}
+
+async function main() {
+  const now = new Date();
+  const lastMonthId = getLastMonthId(now);
+  const previousMonthId = getPreviousMonthId(now);
+
+  const lastMonth = await getMonthData(REPORT_UID, lastMonthId);
+  const previousMonth = await getMonthData(REPORT_UID, previousMonthId);
+
+  const diff = previousMonth.saidas - lastMonth.saidas;
+
+  let comparisonText = "";
+  if (diff > 0) {
+    const pct = previousMonth.saidas > 0
+      ? ((diff / previousMonth.saidas) * 100).toFixed(2)
+      : "0.00";
+    comparisonText =
+      `✅ Você gastou <b>${formatMoney(diff)}</b> a menos que no mês anterior.\n` +
+      `📉 Redução de <b>${pct}%</b>.`;
+  } else if (diff < 0) {
+    const increase = Math.abs(diff);
+    const pct = previousMonth.saidas > 0
+      ? ((increase / previousMonth.saidas) * 100).toFixed(2)
+      : "0.00";
+    comparisonText =
+      `⚠️ Você gastou <b>${formatMoney(increase)}</b> a mais que no mês anterior.\n` +
+      `📈 Aumento de <b>${pct}%</b>.`;
+  } else {
+    comparisonText = `➖ Você gastou exatamente o mesmo valor que no mês anterior.`;
+  }
+
+  const warnLast = !lastMonth.exists
+    ? `\n⚠️ Não encontrei o documento do mês <b>${lastMonthId}</b>.`
+    : "";
+
+  const warnPrev = !previousMonth.exists
+    ? `\n⚠️ Não encontrei o documento do mês <b>${previousMonthId}</b>.`
+    : "";
+
+  const message =
+`📊 <b>Relatório Mensal de Gastos</b>
+
+🗓 <b>${lastMonthId}</b>
+• Saídas: <b>${formatMoney(lastMonth.saidas)}</b>
+• Inter: ${formatMoney(lastMonth.inter)}
+• C6: ${formatMoney(lastMonth.c6)}
+• Seguro: ${formatMoney(lastMonth.seguro)}
+
+🗓 <b>${previousMonthId}</b>
+• Saídas: <b>${formatMoney(previousMonth.saidas)}</b>
+• Inter: ${formatMoney(previousMonth.inter)}
+• C6: ${formatMoney(previousMonth.c6)}
+• Seguro: ${formatMoney(previousMonth.seguro)}
+
+${comparisonText}${warnLast}${warnPrev}`;
+
+  await sendTelegram(message);
+  console.log("OK: relatório enviado.");
+  console.log("Mês atual fechado:", lastMonthId, lastMonth.raw);
+  console.log("Mês anterior:", previousMonthId, previousMonth.raw);
+}
+
+main().catch((err) => {
+  console.error(err);
   process.exit(1);
 });
