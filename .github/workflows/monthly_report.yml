@@ -16,12 +16,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install deps
         run: |
           npm init -y
-          npm install firebase-admin
+          npm install firebase-admin chartjs-node-canvas
 
       - name: Run report
         env:
@@ -30,4 +30,5 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT_JSON: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}"
           FIREBASE_PROJECT_ID: "${{ secrets.FIREBASE_PROJECT_ID }}"
           REPORT_UID: "${{ secrets.REPORT_UID }}"
+          ALERT_PERCENT: "60"
         run: node scripts/monthly_report.js
