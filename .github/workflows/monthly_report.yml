@@ -1,152 +1,33 @@
-const admin = require("firebase-admin");
+name: Relatorio Mensal (Firestore + Telegram)
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID;
-const REPORT_UID = process.env.REPORT_UID;
+on:
+  schedule:
+    - cron: "0 12 1 * *"
+  workflow_dispatch:
 
-if (
-  !TELEGRAM_BOT_TOKEN ||
-  !TELEGRAM_CHAT_ID ||
-  !FIREBASE_SERVICE_ACCOUNT_JSON ||
-  !FIREBASE_PROJECT_ID ||
-  !REPORT_UID
-) {
-  throw new Error("Faltam variáveis de ambiente obrigatórias.");
-}
+jobs:
+  report:
+    runs-on: ubuntu-latest
 
-const serviceAccount = JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON);
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: FIREBASE_PROJECT_ID,
-  });
-}
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-const db = admin.firestore();
+      - name: Install deps
+        run: |
+          npm init -y
+          npm install firebase-admin
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(value || 0);
-}
-
-function getMonthRange(year, month) {
-  const start = new Date(Date.UTC(year, month, 1, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0));
-  return { start, end };
-}
-
-async function getMonthlyTotal(uid, year, month) {
-  const { start, end } = getMonthRange(year, month);
-
-  const snapshot = await db
-    .collection("usuarios")
-    .doc(uid)
-    .collection("transacoes")
-    .where("data", ">=", admin.firestore.Timestamp.fromDate(start))
-    .where("data", "<", admin.firestore.Timestamp.fromDate(end))
-    .get();
-
-  let total = 0;
-
-  snapshot.forEach((doc) => {
-    const item = doc.data();
-
-    // Ajuste aqui conforme o nome dos seus campos
-    const valor = Number(item.valor || 0);
-    const tipo = String(item.tipo || "").toLowerCase();
-
-    // Considera somente despesas
-    if (tipo === "despesa") {
-      total += valor;
-    }
-  });
-
-  return total;
-}
-
-async function sendTelegramMessage(text) {
-  const response = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        parse_mode: "HTML",
-      }),
-    }
-  );
-
-  const data = await response.json();
-
-  if (!data.ok) {
-    throw new Error(`Erro ao enviar Telegram: ${JSON.stringify(data)}`);
-  }
-}
-
-async function main() {
-  const now = new Date();
-
-  // Mês passado
-  const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const lastMonthYear = lastMonthDate.getUTCFullYear();
-  const lastMonth = lastMonthDate.getUTCMonth();
-
-  // Mês retrasado
-  const previousMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1));
-  const previousMonthYear = previousMonthDate.getUTCFullYear();
-  const previousMonth = previousMonthDate.getUTCMonth();
-
-  const totalLastMonth = await getMonthlyTotal(REPORT_UID, lastMonthYear, lastMonth);
-  const totalPreviousMonth = await getMonthlyTotal(REPORT_UID, previousMonthYear, previousMonth);
-
-  const diff = totalPreviousMonth - totalLastMonth;
-
-  let status = "";
-  if (diff > 0) {
-    const percent = totalPreviousMonth > 0 ? ((diff / totalPreviousMonth) * 100).toFixed(2) : "0.00";
-    status = `✅ Você gastou <b>${formatCurrency(diff)}</b> a menos que no mês anterior.\n📉 Redução de <b>${percent}%</b>.`;
-  } else if (diff < 0) {
-    const increase = Math.abs(diff);
-    const percent = totalPreviousMonth > 0 ? ((increase / totalPreviousMonth) * 100).toFixed(2) : "0.00";
-    status = `⚠️ Você gastou <b>${formatCurrency(increase)}</b> a mais que no mês anterior.\n📈 Aumento de <b>${percent}%</b>.`;
-  } else {
-    status = `➖ Você gastou exatamente o mesmo valor que no mês anterior.`;
-  }
-
-  const monthNameLast = lastMonthDate.toLocaleString("pt-BR", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-
-  const monthNamePrevious = previousMonthDate.toLocaleString("pt-BR", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-
-  const message =
-`<b>📊 Relatório Mensal de Gastos</b>
-
-🗓 <b>${monthNameLast}</b>: ${formatCurrency(totalLastMonth)}
-🗓 <b>${monthNamePrevious}</b>: ${formatCurrency(totalPreviousMonth)}
-
-${status}`;
-
-  await sendTelegramMessage(message);
-  console.log("Relatório enviado com sucesso.");
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+      - name: Run report
+        env:
+          TELEGRAM_BOT_TOKEN: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}"
+          FIREBASE_SERVICE_ACCOUNT_JSON: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}"
+          FIREBASE_PROJECT_ID: "${{ secrets.FIREBASE_PROJECT_ID }}"
+          REPORT_UID: "${{ secrets.REPORT_UID }}"
+        run: node scripts/monthly_report.js
