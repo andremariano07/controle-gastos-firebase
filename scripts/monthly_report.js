@@ -10,10 +10,10 @@ const REPORT_UID = process.env.REPORT_UID;
 const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 const ALERT_PERCENT = Number(process.env.ALERT_PERCENT || 60);
 
-// Z-API / WhatsApp
 const ZAPI_INSTANCE_ID = process.env.ZAPI_INSTANCE_ID;
 const ZAPI_TOKEN = process.env.ZAPI_TOKEN;
 const WHATSAPP_TO = process.env.WHATSAPP_TO;
+const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || "";
 
 if (!TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
 if (!TELEGRAM_CHAT_ID) throw new Error("Missing TELEGRAM_CHAT_ID");
@@ -175,21 +175,41 @@ async function sendWhatsAppMessage(text) {
   const plainText = htmlToWhatsApp(text);
   const url = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`;
 
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  if (ZAPI_CLIENT_TOKEN) {
+    headers["Client-Token"] = ZAPI_CLIENT_TOKEN;
+  }
+
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
-      phone: WHATSAPP_TO,
+      phone: String(WHATSAPP_TO).replace(/\D/g, ""),
       message: plainText,
     }),
   });
 
-  const data = await res.json();
+  const raw = await res.text();
+  let data;
+
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = { raw };
+  }
+
+  console.log("Z-API status:", res.status);
+  console.log("Z-API resposta:", JSON.stringify(data));
 
   if (!res.ok) {
     throw new Error(`Z-API send-text error: ${JSON.stringify(data)}`);
+  }
+
+  if (data && data.success === false) {
+    throw new Error(`Z-API retornou falha: ${JSON.stringify(data)}`);
   }
 }
 
@@ -381,7 +401,12 @@ ${!closedMonth.exists ? `\n⚠️ Não encontrei o documento do mês <b>${closed
 ${!previousMonth.exists ? `\n⚠️ Não encontrei o documento do mês <b>${previousMonthId}</b>.` : ""}`.trim();
 
   await sendTelegramMessage(message);
-  await sendWhatsAppMessage(message);
+
+  try {
+    await sendWhatsAppMessage(message);
+  } catch (err) {
+    console.error("Falha ao enviar no WhatsApp:", err.message);
+  }
 
   const chartPath = await generateChart(yearMonths, year);
 
@@ -390,7 +415,7 @@ ${!previousMonth.exists ? `\n⚠️ Não encontrei o documento do mês <b>${prev
     `📈 <b>Gráfico ${year}</b>\nSalário, saídas e saldo final projetado.`
   );
 
-  console.log("OK: relatório enviado no Telegram e WhatsApp, e gráfico enviado no Telegram.");
+  console.log("OK: relatório enviado no Telegram e tentativa de envio no WhatsApp concluída.");
 }
 
 main().catch((err) => {
