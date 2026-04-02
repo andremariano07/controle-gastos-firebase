@@ -1,4 +1,4 @@
-name: Relatorio Mensal (Firestore + Telegram)
+name: Relatorio Mensal (Firestore + Telegram + WhatsApp)
 
 on:
   schedule:
@@ -31,4 +31,7 @@ jobs:
           FIREBASE_PROJECT_ID: "${{ secrets.FIREBASE_PROJECT_ID }}"
           REPORT_UID: "${{ secrets.REPORT_UID }}"
           ALERT_PERCENT: "60"
+          ZAPI_INSTANCE_ID: "${{ secrets.ZAPI_INSTANCE_ID }}"
+          ZAPI_TOKEN: "${{ secrets.ZAPI_TOKEN }}"
+          WHATSAPP_TO: "${{ secrets.WHATSAPP_TO }}"
         run: node scripts/monthly_report.js
