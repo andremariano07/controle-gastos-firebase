@@ -467,6 +467,7 @@
 
     const months = Array.from({length:12}, (_,i)=> `2026-${String(i+1).padStart(2,"0")}`);
     const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+    const LAST_MONTH_KEY = "controle_gastos_2026_last_month";
 
     months.forEach((id, i) => {
       const opt = document.createElement("option");
@@ -476,7 +477,9 @@
     });
 
     const now = new Date();
-    const defaultMonth = (now.getFullYear() === 2026) ? `2026-${String(now.getMonth()+1).padStart(2,"0")}` : "2026-01";
+    const savedMonth = localStorage.getItem(LAST_MONTH_KEY);
+    const currentYearMonth = (now.getFullYear() === 2026) ? `2026-${String(now.getMonth()+1).padStart(2,"0")}` : "2026-01";
+    const defaultMonth = months.includes(savedMonth) ? savedMonth : currentYearMonth;
     $("monthSelect").value = defaultMonth;
     $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
 
@@ -706,7 +709,10 @@
       ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
     }
 
-    $("monthSelect").addEventListener("change", () => listenSelectedMonth());
+    $("monthSelect").addEventListener("change", () => {
+      localStorage.setItem(LAST_MONTH_KEY, currentMonthId());
+      listenSelectedMonth();
+    });
     $("resetBtn").addEventListener("click", resetCurrentMonth);
 
     const moneyFields = ["salario","inter","c6","seguroCarro","saldoConta"];
