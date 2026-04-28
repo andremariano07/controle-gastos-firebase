@@ -11,7 +11,19 @@
       --blue:#2b67c9; --blue2:#1f56b3; --text:#1c1c1c; --muted:#5f6b76;
       --radius:14px;
     }
-    body{ margin:0; font-family: Arial, sans-serif; background:var(--bg); color:var(--text); }
+    body{
+      margin:0;
+      font-family: Arial, sans-serif;
+      background:
+        linear-gradient(rgba(233,236,239,.76), rgba(233,236,239,.76)),
+        url("financas.jpg") center / cover fixed no-repeat;
+      color:var(--text);
+    }
+    #loginScreen,
+    #enrollScreen,
+    #mfaScreen{
+      background:transparent !important;
+    }
     .wrap{ max-width:1200px; margin:18px auto; padding:0 14px 40px; }
 
     .topbar{
