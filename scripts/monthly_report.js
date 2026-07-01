@@ -1,4 +1,5 @@
-const admin = require("firebase-admin");
+const { initializeApp, cert, getApps } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
 const fs = require("fs");
 const path = require("path");
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
@@ -23,14 +24,14 @@ if (!FIREBASE_SERVICE_ACCOUNT_JSON) throw new Error("Missing FIREBASE_SERVICE_AC
 
 const serviceAccount = JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON);
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+if (!getApps().length) {
+  initializeApp({
+    credential: cert(serviceAccount),
     projectId: FIREBASE_PROJECT_ID,
   });
 }
 
-const db = admin.firestore();
+const db = getFirestore();
 
 function money(v) {
   return new Intl.NumberFormat("pt-BR", {
