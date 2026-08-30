@@ -1,0 +1,81 @@
+name: Relatorio Mensal (Firestore + Telegram + WhatsApp)
+
+on:
+  schedule:
+    # 12:00 UTC no dia 1 de cada mês (09:00 no horário de Brasília, UTC-3).
+    # Cron do GitHub Actions roda sempre em UTC e pode atrasar alguns
+    # minutos em horários de pico — isso é uma limitação da plataforma,
+    # não do workflow.
+    - cron: "0 12 1 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rodar sem enviar mensagens (apenas logs)"
+        type: boolean
+        default: false
+
+# Evita que duas execuções rodem ao mesmo tempo (ex.: disparo manual
+# coincidindo com o agendamento), o que poderia gerar mensagens duplicadas.
+concurrency:
+  group: relatorio-mensal
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install deps (versões fixas via package-lock.json)
+        run: npm ci
+
+      - name: Run report
+        env:
+          TELEGRAM_BOT_TOKEN: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}"
+          FIREBASE_SERVICE_ACCOUNT_JSON: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}"
+          FIREBASE_PROJECT_ID: "${{ secrets.FIREBASE_PROJECT_ID }}"
+          REPORT_UID: "${{ secrets.REPORT_UID }}"
+          ALERT_PERCENT: "60"
+          ZAPI_INSTANCE_ID: "${{ secrets.ZAPI_INSTANCE_ID }}"
+          ZAPI_TOKEN: "${{ secrets.ZAPI_TOKEN }}"
+          WHATSAPP_TO: "${{ secrets.WHATSAPP_TO }}"
+          ZAPI_CLIENT_TOKEN: "${{ secrets.ZAPI_CLIENT_TOKEN }}"
+          DRY_RUN: "${{ github.event.inputs.dry_run }}"
+        run: node scripts/relatorio-mensal.js
+
+      # Guarda os gráficos gerados como artefato do workflow por 7 dias,
+      # útil para depurar sem precisar rodar tudo de novo localmente.
+      - name: Upload gráficos gerados (debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graficos-relatorio-${{ github.run_id }}
+          path: |
+            *.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Se o relatório falhar, avisa direto no Telegram — sem isso, a
+      # única forma de descobrir seria checando a aba Actions manualmente.
+      - name: Notificar falha no Telegram
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}"
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d parse_mode="HTML" \
+            -d text="🚨 <b>Falha no Relatório Mensal</b>%0AA execução automática falhou. Veja os logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
