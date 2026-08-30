@@ -1,0 +1,17 @@
+{
+  "name": "relatorio-financeiro-mensal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Relatorio financeiro mensal automatizado (Firestore + Telegram + WhatsApp)",
+  "main": "scripts/relatorio-mensal.js",
+  "scripts": {
+    "report": "node scripts/relatorio-mensal.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.3.0",
+    "chartjs-node-canvas": "^5.0.0"
+  }
+}
