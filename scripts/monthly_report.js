@@ -613,7 +613,19 @@ async function generateCategoryPieChart(month) {
 // ---------------------------------------------------------------------------
 
 async function main() {
- const now = new Date();
+  const now = new Date();
+
+  // Mês do relatório: mês anterior ao mês atual.
+  // Ex.: executando em 01/09/2026, o relatório será de agosto/2026.
+  const closedMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  // Comparação: mês anterior ao mês do relatório.
+  // Ex.: relatório de agosto/2026 será comparado com julho/2026.
+  const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+
+  const closedMonthId = monthId(closedMonthDate);
+  const previousMonthId = monthId(previousMonthDate);
+  const year = closedMonthDate.getFullYear();
 
   // As quatro leituras são independentes entre si — rodam em paralelo em vez
   // de sequencialmente, o que reduz a latência total da execução.
