@@ -613,14 +613,7 @@ async function generateCategoryPieChart(month) {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const now = new Date();
-
-  const closedMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-
-  const closedMonthId = monthId(closedMonthDate);
-  const previousMonthId = monthId(previousMonthDate);
-  const year = closedMonthDate.getFullYear();
+ const now = new Date();
 
   // As quatro leituras são independentes entre si — rodam em paralelo em vez
   // de sequencialmente, o que reduz a latência total da execução.
