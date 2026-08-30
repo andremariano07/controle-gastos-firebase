@@ -1,563 +1,1225 @@
-const { initializeApp, cert, getApps } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
-const fs = require("fs");
-const path = require("path");
-const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Controle 2026 - Gastos</title>
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID;
-const REPORT_UID = process.env.REPORT_UID;
-const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-const ALERT_PERCENT = Number(process.env.ALERT_PERCENT || 60);
-
-const ZAPI_INSTANCE_ID = process.env.ZAPI_INSTANCE_ID;
-const ZAPI_TOKEN = process.env.ZAPI_TOKEN;
-const WHATSAPP_TO = process.env.WHATSAPP_TO;
-const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || "";
-
-if (!TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
-if (!TELEGRAM_CHAT_ID) throw new Error("Missing TELEGRAM_CHAT_ID");
-if (!FIREBASE_PROJECT_ID) throw new Error("Missing FIREBASE_PROJECT_ID");
-if (!REPORT_UID) throw new Error("Missing REPORT_UID");
-if (!FIREBASE_SERVICE_ACCOUNT_JSON) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
-
-const serviceAccount = JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON);
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert(serviceAccount),
-    projectId: FIREBASE_PROJECT_ID,
-  });
-}
-
-const db = getFirestore();
-
-// ---------------------------------------------------------------------------
-// Helpers de formatação
-// ---------------------------------------------------------------------------
-
-function money(v) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(v) || 0);
-}
-
-function pct(v, digits = 2) {
-  return `${Number(v || 0).toFixed(digits)}%`;
-}
-
-function monthId(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function monthLabel(monthNumber) {
-  const labels = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
-  return labels[monthNumber - 1] || "";
-}
-
-function monthLabelFull(monthNumber) {
-  const labels = [
-    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-  ];
-  return labels[monthNumber - 1] || "";
-}
-
-function monthIdToFullLabel(id) {
-  const [year, m] = id.split("-");
-  return `${monthLabelFull(Number(m))} de ${year}`;
-}
-
-// ---------------------------------------------------------------------------
-// Cálculo de dados de um mês
-// ---------------------------------------------------------------------------
-
-function calc(data = {}) {
-  const salario = Number(data.salario || 0);
-  const inter = Number(data.cartaoInter ?? data.inter ?? 0);
-  const c6 = Number(data.cartaoC6 ?? data.c6 ?? 0);
-  const seguro = Number(data.seguroCarro || 0);
-  const saldoConta = Number(data.saldoConta || 0);
-
-  const saidas = inter + c6 + seguro;
-  const sobra = salario - saidas;
-  const saldoFinal = saldoConta + sobra;
-  const percentualSaidas = salario > 0 ? (saidas / salario) * 100 : 0;
-
-  return {
-    salario,
-    inter,
-    c6,
-    seguro,
-    saldoConta,
-    saidas,
-    sobra,
-    saldoFinal,
-    percentualSaidas,
-  };
-}
-
-async function getMonth(uid, id) {
-  const doc = await db.doc(`users/${uid}/months/${id}`).get();
-
-  if (!doc.exists) {
-    return { id, exists: false, raw: {}, ...calc({}) };
-  }
-
-  const data = doc.data() || {};
-  return { id, exists: true, raw: data, ...calc(data) };
-}
-
-async function getYearMonths(uid, year) {
-  const ids = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
-  const refs = ids.map((id) => db.doc(`users/${uid}/months/${id}`));
-  const snaps = await db.getAll(...refs);
-
-  return ids.map((id, idx) => {
-    const snap = snaps[idx];
-    if (!snap.exists) {
-      return { id, exists: false, raw: {}, ...calc({}) };
+  <style>
+    :root{
+      --bg:#e9ecef; --panel:#f8f9fa; --line:#cfd4da;
+      --blue:#2b67c9; --blue2:#1f56b3; --text:#1c1c1c; --muted:#5f6b76;
+      --radius:14px;
     }
-    const data = snap.data() || {};
-    return { id, exists: true, raw: data, ...calc(data) };
-  });
-}
+    body{
+      margin:0;
+      font-family: Arial, sans-serif;
+      background:
+        linear-gradient(rgba(233,236,239,.76), rgba(233,236,239,.76)),
+        url("financas.jpg") center / cover fixed no-repeat;
+      color:var(--text);
+    }
+    #loginScreen,
+    #enrollScreen,
+    #mfaScreen{
+      background:transparent !important;
+    }
+    .wrap{ max-width:1200px; margin:18px auto; padding:0 14px 40px; }
 
-// ---------------------------------------------------------------------------
-// Estatísticas do ano (média, melhor/pior mês, total economizado)
-// ---------------------------------------------------------------------------
+    .topbar{
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:12px 14px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+      flex-wrap: wrap;
+    }
+    .month{
+      font-family:"Brush Script MT","Comic Sans MS",cursive;
+      font-size:56px; line-height:1; margin:0;
+      min-width:240px;
+    }
+    .small{ font-size:12px; color:var(--muted); }
+    .saldoBox{
+      flex:1; min-width:260px;
+      display:flex; align-items:center; justify-content:center; gap:16px;
+      background:var(--blue); color:#fff; border-radius:12px; padding:10px 14px; min-height:54px;
+    }
+    .saldoBox .label{ font-weight:800; letter-spacing:.4px; }
+    .saldoBox .value{ font-weight:900; font-size:18px; }
+    .controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
-function computeYearStats(yearMonths, upToMonthId) {
-  const closed = yearMonths.filter((m) => m.exists && m.id <= upToMonthId);
+    select, input, button{
+      padding:10px; border-radius:10px; border:1px solid var(--line);
+      background:#fff; font-size:14px;
+    }
+    button{ cursor:pointer; background:var(--blue2); color:#fff; border:none; }
+    button:hover{ filter:brightness(1.05); }
+    .ghost{ background:#fff; color:var(--blue2); border:1px solid var(--blue2); }
 
-  if (closed.length === 0) {
-    return {
-      count: 0,
-      avgSalario: 0,
-      avgSaidas: 0,
-      avgSobra: 0,
-      avgPercentualSaidas: 0,
-      totalEconomizadoAno: 0,
-      melhorMes: null,
-      piorMes: null,
+    .grid{
+      margin-top:14px;
+      display:grid;
+      grid-template-columns: 1.05fr 1.2fr 1.35fr;
+      gap:14px;
+      align-items:start;
+    }
+    .card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:12px;
+    }
+    .cardTitle{
+      margin:0 0 10px;
+      font-size:14px; letter-spacing:.4px; text-transform:uppercase;
+      color:var(--muted); font-weight:900;
+    }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; }
+    .field{ flex:1; min-width:210px; }
+    .field label{ display:block; font-size:12px; color:var(--muted); font-weight:800; margin:0 0 6px; }
+    .field input{ width:100%; box-sizing:border-box; }
+
+    .kpis{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .kpi{
+      background:#fff; border:1px solid var(--line); border-radius:12px;
+      padding:10px;
+    }
+    .kpi .t{ font-size:12px; color:var(--muted); font-weight:800; }
+    .kpi .v{ font-size:18px; font-weight:900; margin-top:4px; }
+
+    .totLine{
+      display:flex; justify-content:space-between; align-items:center;
+      margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);
+      font-weight:900;
+    }
+
+    .chartBox{
+      background:#fff; border:1px solid var(--line); border-radius:12px;
+      padding:12px;
+    }
+
+    .status{
+      margin-top:8px;
+      padding:8px 10px;
+      background:#fff; border:1px solid var(--line); border-radius:12px;
+      font-size:12px; color:var(--muted);
+      word-break: break-word;
+    }
+
+    .secretBox{
+      background:#fff; border:1px dashed var(--line); border-radius:12px;
+      padding:10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:13px;
+    }
+
+    .toggleLine{
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px;
+    }
+    .toggleLine input[type="checkbox"]{ transform: scale(1.2); }
+
+    @media (max-width: 1020px){
+      .grid{ grid-template-columns: 1fr; }
+      .month{ font-size:44px; }
+    }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+
+<body>
+
+  <!-- LOGIN -->
+  <div id="loginScreen" style="display:none; min-height:100vh; background:var(--bg);">
+    <div style="max-width:440px; margin:0 auto; padding:28px 14px;">
+      <div class="card">
+        <p class="cardTitle">Entrar</p>
+
+        <div class="field" style="margin-bottom:10px;">
+          <label>E-mail</label>
+          <input id="loginEmail" type="email" placeholder="seuemail@exemplo.com" autocomplete="email">
+        </div>
+
+        <div class="field" style="margin-bottom:10px;">
+          <label>Senha</label>
+          <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnLogin">Entrar</button>
+          <button id="btnRegister" class="ghost">Criar conta</button>
+        </div>
+
+        <div class="status" id="loginStatus" style="margin-top:10px;">Digite e-mail e senha.</div>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="btnResendVerify" class="ghost">Reenviar verificação</button>
+        </div>
+
+        <div class="small" style="margin-top:8px; line-height:1.45;">
+          Este modo usa <b>TOTP manual</b> (Authenticator) sem MFA do Firebase.
+          <br><b>Obs:</b> para criar a conta, o e-mail precisa ser confirmado.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ENROLL TOTP (manual) -->
+  <div id="enrollScreen" style="display:none; min-height:100vh; background:var(--bg);">
+    <div style="max-width:520px; margin:0 auto; padding:28px 14px;">
+      <div class="card">
+        <p class="cardTitle">Ativar MFA (Google Authenticator) — modo manual</p>
+
+        <div class="small" style="line-height:1.55; margin-bottom:10px;">
+          1) Clique em <b>Gerar QR</b><br>
+          2) No Google Authenticator, adicione uma conta e escaneie o QR (ou use a chave)<br>
+          3) Digite o código de 6 dígitos e confirme
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnTotpGenerate">Gerar QR</button>
+          <button id="btnEnrollLogout" class="ghost">Sair</button>
+        </div>
+
+        <div style="margin-top:12px; display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+          <div style="background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px;">
+            <canvas id="qrCanvas" width="180" height="180" style="display:block;"></canvas>
+            <div class="small" style="margin-top:6px;">Escaneie o QR (ou use a chave)</div>
+          </div>
+
+          <div style="flex:1; min-width:240px;">
+            <div class="small" style="margin-bottom:6px;"><b>Chave (se não puder escanear):</b></div>
+            <div id="secretKeyBox" class="secretBox">—</div>
+            <div class="small" style="margin-top:8px;">
+              Guarde com cuidado. Não compartilhe.
+              <br><b>Nota:</b> este modo é “manual” (não é MFA oficial do Firebase).
+            </div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:12px;">
+          <label>Código do Authenticator</label>
+          <input id="totpCode" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code">
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button id="btnTotpVerify">Confirmar e continuar</button>
+        </div>
+
+        <div class="status" id="enrollStatus" style="margin-top:10px;">
+          Clique em <b>Gerar QR</b> para iniciar.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHALLENGE TOTP (manual) -->
+  <div id="mfaScreen" style="display:none; min-height:100vh; background:var(--bg);">
+    <div style="max-width:460px; margin:0 auto; padding:28px 14px;">
+      <div class="card">
+        <p class="cardTitle">Verificação (Authenticator)</p>
+
+        <div class="small" style="line-height:1.5; margin-bottom:10px;">
+          Digite o código do Google Authenticator para continuar.
+        </div>
+
+        <div class="field" style="margin-top:10px;">
+          <label>Código (6 dígitos)</label>
+          <input id="mfaCode" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code">
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="btnMfaVerify">Confirmar</button>
+          <button id="btnMfaBack" class="ghost">Sair</button>
+        </div>
+
+        <div class="status" id="mfaStatus" style="margin-top:10px;">Aguardando…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="appScreen" class="wrap" style="display:none;">
+    <div class="topbar">
+      <div>
+        <h1 class="month" id="monthTitle">janeiro</h1>
+        <div class="small">
+          Ano: <b>2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6 + Seguro))
+        </div>
+      </div>
+
+      <div class="saldoBox">
+        <div class="label">SALDO FINAL (PROJETADO)</div>
+        <div class="value">R$ <span id="saldoFinal">0,00</span></div>
+      </div>
+
+      <div class="controls">
+        <select id="monthSelect"></select>
+        <button id="resetBtn" class="ghost" title="Só zera os campos do mês selecionado (não apaga outros meses).">Zerar mês</button>
+        <button id="logoutBtn" class="ghost">Sair</button>
+      </div>
+    </div>
+
+    <div class="grid">
+
+      <!-- CARD 1 -->
+      <div class="card">
+        <p class="cardTitle">Campos do mês</p>
+
+        <div class="row">
+          <div class="field">
+            <label>Salário do mês (R$)</label>
+            <input id="salario" type="text" inputmode="decimal" placeholder="R$ 3.500,00" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>Cartão Inter - fatura (R$)</label>
+            <input id="inter" type="text" inputmode="decimal" placeholder="R$ 1.200,00" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>Cartão C6 - fatura (R$)</label>
+            <input id="c6" type="text" inputmode="decimal" placeholder="R$ 800,00" autocomplete="off">
+          </div>
+
+          <div class="field">
+            <label>Seguro do carro (R$)</label>
+            <input id="seguroCarro" type="text" inputmode="decimal" placeholder="R$ 250,00" autocomplete="off">
+          </div>
+
+          <div class="field">
+            <label>Quanto tenho na conta (R$)</label>
+            <input id="saldoConta" type="text" inputmode="decimal" placeholder="R$ 500,00" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="status" id="status">Aguardando login…</div>
+
+        <div style="margin-top:12px" class="kpis">
+          <div class="kpi">
+            <div class="t">Total Saídas (Inter + C6 + Seguro)</div>
+            <div class="v">R$ <span id="totalCartoes">0,00</span></div>
+          </div>
+          <div class="kpi">
+            <div class="t">Sobra do Salário (Salário − Saídas)</div>
+            <div class="v">R$ <span id="sobraSalario">0,00</span></div>
+          </div>
+          <div class="kpi" style="grid-column: 1 / -1;">
+            <div class="t">Saldo Final Projetado (Saldo em conta + Sobra do salário)</div>
+            <div class="v">R$ <span id="saldoFinal2">0,00</span></div>
+          </div>
+        </div>
+
+        <div class="totLine">
+          <div>Resumo rápido</div>
+          <div id="quickHint" class="small"></div>
+        </div>
+
+        <div style="margin-top:15px;">
+          <p class="cardTitle">Dados Salvos no Firebase (Mês Atual)</p>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden;">
+              <thead style="background:#dde2e7;">
+                <tr>
+                  <th style="padding:8px; border:1px solid #cfd4da; text-align:left;">Campo</th>
+                  <th style="padding:8px; border:1px solid #cfd4da; text-align:left;">Valor</th>
+                </tr>
+              </thead>
+              <tbody id="dadosSalvosTabela"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 2 (NOVO) -->
+      <div class="card">
+        <p class="cardTitle">Relatório Mensal (Telegram + IA)</p>
+
+        <div class="toggleLine">
+          <input id="reportEnabled" type="checkbox">
+          <label for="reportEnabled" style="font-weight:900;">Ativar relatório automático todo mês</label>
+          <span class="small">Enviado no dia 1 (09:00) com fechamento do mês anterior.</span>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div class="field">
+            <label>Alerta se Saídas passarem de (% do salário)</label>
+            <input id="reportAlertPct" type="number" min="10" max="200" step="1" placeholder="70">
+          </div>
+          <div class="field">
+            <label>Observações (opcional)</label>
+            <input id="reportNotes" type="text" placeholder="Ex: meta reduzir C6 em 15%">
+          </div>
+        </div>
+
+        <div class="status" id="reportStatus">Configuração do relatório: carregando…</div>
+
+        <div class="small" style="margin-top:10px; line-height:1.5;">
+          <b>Como funciona:</b> essa tela só salva suas preferências no Firestore.  
+          O envio para o Telegram é feito por uma <b>Cloud Function agendada</b> (backend),
+          usando o token do bot guardado com segurança (Secrets).
+        </div>
+      </div>
+
+      <!-- CARD 3 -->
+      <div class="card">
+        <p class="cardTitle">Gráfico 2026</p>
+        <div class="chartBox">
+          <canvas id="chart" height="120"></canvas>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <p class="cardTitle">Como o gráfico funciona</p>
+          <div class="small" style="line-height:1.55">
+            <b>Barras (12 meses):</b><br>
+            • <b>Salário</b> (positivo)<br>
+            • <b>Saídas (Inter + C6 + Seguro)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
+
+            <b>Linha (12 meses):</b><br>
+            • <b>Saldo Final Projetado</b> = saldo em conta + (salário − saídas)<br><br>
+
+            Assim você enxerga fácil:
+            <ul>
+              <li>se as saídas (cartões + seguro) estão consumindo muito do salário</li>
+              <li>se o saldo final projetado está subindo ou caindo ao longo de 2026</li>
+            </ul>
+          </div>
+          <div class="small" style="margin-top:10px">
+            Dica: preencha mês a mês (Jan…Dez). O gráfico se atualiza automaticamente.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import {
+      getFirestore, doc, getDoc, setDoc, collection, onSnapshot, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    import {
+      getAuth, onAuthStateChanged,
+      signInWithEmailAndPassword, createUserWithEmailAndPassword,
+      signOut, setPersistence, browserSessionPersistence,
+      sendEmailVerification, reload
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCOZap1gB8N8k-3-4nhA-jd2k7HlFJgIes",
+      authDomain: "gastos-92e20.firebaseapp.com",
+      projectId: "gastos-92e20",
+      storageBucket: "gastos-92e20.firebasestorage.app",
+      messagingSenderId: "248552638302",
+      appId: "1:248552638302:web:0588762093eaf4108d31cf"
     };
-  }
 
-  const sum = (fn) => closed.reduce((acc, m) => acc + fn(m), 0);
-  const count = closed.length;
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    await setPersistence(auth, browserSessionPersistence);
 
-  const avgSalario = sum((m) => m.salario) / count;
-  const avgSaidas = sum((m) => m.saidas) / count;
-  const avgSobra = sum((m) => m.sobra) / count;
-  const avgPercentualSaidas = sum((m) => m.percentualSaidas) / count;
-  const totalEconomizadoAno = sum((m) => m.sobra);
+    const $ = (id) => document.getElementById(id);
 
-  const melhorMes = closed.reduce((best, m) => (m.sobra > best.sobra ? m : best), closed[0]);
-  const piorMes = closed.reduce((worst, m) => (m.sobra < worst.sobra ? m : worst), closed[0]);
+    function showOnly(id){
+      ["loginScreen","enrollScreen","mfaScreen","appScreen"].forEach(x=>{
+        const el = $(x); if (!el) return;
+        el.style.display = (x===id) ? "block" : "none";
+      });
+    }
+    function showLogin(msg){ showOnly("loginScreen"); $("loginStatus").textContent = msg || "Digite e-mail e senha."; }
+    function showEnroll(msg){ showOnly("enrollScreen"); $("enrollStatus").textContent = msg || "Configure o Authenticator."; }
+    function showMfa(msg){ showOnly("mfaScreen"); $("mfaStatus").textContent = msg || "Digite o código do Authenticator."; }
+    function showApp(){ showOnly("appScreen"); }
 
-  return {
-    count,
-    avgSalario,
-    avgSaidas,
-    avgSobra,
-    avgPercentualSaidas,
-    totalEconomizadoAno,
-    melhorMes,
-    piorMes,
-  };
-}
+    function brl(n){
+      const s = (Number(n)||0).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
+      return s.replace(/\u00A0/g, " ");
+    }
+    function brNum(n){
+      return (Number(n)||0).toLocaleString("pt-BR",{ minimumFractionDigits:2, maximumFractionDigits:2 });
+    }
+    function parseBRL(value){
+      if (value == null) return 0;
+      let s = String(value).trim();
+      if (!s) return 0;
+      s = s.replace(/\s/g,"").replace(/^R\$/i,"");
+      s = s.replace(/[^\d,.\-]/g, "");
+      if (s.includes(",")) s = s.replace(/\./g,"").replace(",",".");
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    }
+    function formatInputToBRL(el){
+      const n = parseBRL(el.value);
+      el.value = brl(n);
+    }
 
-// Tendência com base nos últimos até-3 meses fechados (excluindo o mês atual)
-function computeTrend(yearMonths, closedMonthId) {
-  const closed = yearMonths.filter((m) => m.exists && m.id <= closedMonthId).sort((a, b) => (a.id < b.id ? -1 : 1));
-  const lastThree = closed.slice(-3);
+    const editing = new Set();
+    function markEditing(el, on){ if(on) editing.add(el.id); else editing.delete(el.id); }
+    function safeSetInput(id, value){
+      const el = $(id);
+      if (!el) return;
+      if (editing.has(id)) return;
+      el.value = brl(value);
+    }
 
-  if (lastThree.length < 2) {
-    return { emoji: "➖", text: "Ainda não há histórico suficiente para indicar tendência." };
-  }
+    const months = Array.from({length:12}, (_,i)=> `2026-${String(i+1).padStart(2,"0")}`);
+    const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+    const LAST_MONTH_KEY = "controle_gastos_2026_last_month";
 
-  let up = 0;
-  let down = 0;
-  for (let i = 1; i < lastThree.length; i++) {
-    if (lastThree[i].saidas > lastThree[i - 1].saidas) up++;
-    else if (lastThree[i].saidas < lastThree[i - 1].saidas) down++;
-  }
+    months.forEach((id, i) => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = `${monthNames[i]} / 2026`;
+      $("monthSelect").appendChild(opt);
+    });
 
-  if (up > down) {
-    return { emoji: "📈", text: `Suas saídas vêm <b>subindo</b> nos últimos ${lastThree.length} meses.` };
-  }
-  if (down > up) {
-    return { emoji: "📉", text: `Suas saídas vêm <b>caindo</b> nos últimos ${lastThree.length} meses.` };
-  }
-  return { emoji: "➡️", text: `Suas saídas estão <b>estáveis</b> nos últimos ${lastThree.length} meses.` };
-}
+    const now = new Date();
+    const savedMonth = localStorage.getItem(LAST_MONTH_KEY);
+    const currentYearMonth = (now.getFullYear() === 2026) ? `2026-${String(now.getMonth()+1).padStart(2,"0")}` : "2026-01";
+    const defaultMonth = months.includes(savedMonth) ? savedMonth : currentYearMonth;
+    $("monthSelect").value = defaultMonth;
+    $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
 
-// ---------------------------------------------------------------------------
-// Telegram / WhatsApp
-// ---------------------------------------------------------------------------
+    let uid = null;
+    let unsubSelected = null;
+    let unsubAllMonths = null;
+    let unsubReportSettings = null;
 
-async function sendTelegramMessage(text) {
-  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
+    const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
+    let chart = null;
 
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    throw new Error(`Telegram sendMessage error: ${JSON.stringify(data)}`);
-  }
-}
+    let autosaveTimer = null;
+    let autosaveInFlight = false;
+    let pendingSaveAfter = false;
 
-async function sendTelegramPhoto(photoPath, caption) {
-  const form = new FormData();
-  form.append("chat_id", TELEGRAM_CHAT_ID);
-  form.append("caption", caption);
-  form.append("parse_mode", "HTML");
+    function calcFields(d){
+      const salario = parseBRL(d.salario);
+      const inter = parseBRL(d.cartaoInter ?? d.inter);
+      const c6 = parseBRL(d.cartaoC6 ?? d.c6);
+      const seguroCarro = parseBRL(d.seguroCarro);
+      const saldoConta = parseBRL(d.saldoConta);
+      const totalSaidas = inter + c6 + seguroCarro;
+      const sobraSalario = salario - totalSaidas;
+      const saldoFinal = saldoConta + sobraSalario;
+      return { salario, inter, c6, seguroCarro, saldoConta, totalSaidas, sobraSalario, saldoFinal };
+    }
 
-  const fileBlob = new Blob([fs.readFileSync(photoPath)], { type: "image/png" });
-  form.append("photo", fileBlob, path.basename(photoPath));
+    function updateKPIs(d){
+      const c = calcFields(d);
+      $("totalCartoes").textContent = brNum(c.totalSaidas);
+      $("sobraSalario").textContent = brNum(c.sobraSalario);
+      $("saldoFinal").textContent = brNum(c.saldoFinal);
+      $("saldoFinal2").textContent = brNum(c.saldoFinal);
 
-  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-    method: "POST",
-    body: form,
-  });
+      if (c.sobraSalario >= 0) {
+        $("quickHint").textContent = `Sobrou ${brl(c.sobraSalario)} do salário; somando com a conta, saldo final projeta ${brl(c.saldoFinal)}.`;
+      } else {
+        $("quickHint").textContent = `Saídas passaram ${brl(Math.abs(c.sobraSalario))} do salário; seu saldo final projeta ${brl(c.saldoFinal)}.`;
+      }
+    }
 
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    throw new Error(`Telegram sendPhoto error: ${JSON.stringify(data)}`);
-  }
-}
+    function atualizarTabelaSalvos(d, updatedAtMillis = null){
+      const c = calcFields(d);
+      const tbody = $("dadosSalvosTabela");
+      if (!tbody) return;
 
-function htmlToWhatsApp(text) {
-  return String(text)
-    .replace(/<b>(.*?)<\/b>/g, "*$1*")
-    .replace(/<\/?[^>]+(>|$)/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+      const updatedText = updatedAtMillis ? new Date(updatedAtMillis).toLocaleString("pt-BR") : "-";
+      const linhas = [
+        ["Salário", brl(c.salario)],
+        ["Cartão Inter", brl(c.inter)],
+        ["Cartão C6", brl(c.c6)],
+        ["Seguro Carro", brl(c.seguroCarro)],
+        ["Saldo em Conta", brl(c.saldoConta)],
+        ["Total Saídas", brl(c.totalSaidas)],
+        ["Sobra do Salário", brl(c.sobraSalario)],
+        ["Saldo Final Projetado", brl(c.saldoFinal)],
+        ["Última Atualização", updatedText]
+      ];
 
-async function sendWhatsAppMessage(text) {
-  if (!ZAPI_INSTANCE_ID || !ZAPI_TOKEN || !WHATSAPP_TO) {
-    console.log("WhatsApp não configurado. Pulando envio por Z-API.");
-    return;
-  }
+      tbody.innerHTML = "";
+      linhas.forEach(([campo, valor]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td style="padding:8px; border:1px solid #cfd4da;">${campo}</td>
+          <td style="padding:8px; border:1px solid #cfd4da; font-weight:900;">${valor}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
 
-  const plainText = htmlToWhatsApp(text);
-  const url = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`;
+    function setInputsFromDoc(d){
+      safeSetInput("salario", d.salario);
+      safeSetInput("inter", d.cartaoInter ?? d.inter);
+      safeSetInput("c6", d.cartaoC6 ?? d.c6);
+      safeSetInput("seguroCarro", d.seguroCarro);
+      safeSetInput("saldoConta", d.saldoConta);
 
-  const headers = { "Content-Type": "application/json" };
-  if (ZAPI_CLIENT_TOKEN) headers["Client-Token"] = ZAPI_CLIENT_TOKEN;
+      updateKPIs(d);
+      const updatedAtMillis = d?.updatedAt?.toMillis?.() ?? null;
+      atualizarTabelaSalvos(d, updatedAtMillis);
+    }
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      phone: String(WHATSAPP_TO).replace(/\D/g, ""),
-      message: plainText,
-    }),
-  });
+    function currentMonthId(){ return $("monthSelect").value; }
+    function monthDocRef(monthId){ return doc(db, "users", uid, "months", monthId); }
+    function mfaDocRef(){ return doc(db, "users", uid, "mfa", "customTotp"); }
+    function reportSettingsRef(){ return doc(db, "users", uid, "settings", "report"); }
 
-  const raw = await res.text();
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    data = { raw };
-  }
+    async function ensureMonthDocsExist(){
+      for (const m of months){
+        const ref = monthDocRef(m);
+        const snap = await getDoc(ref);
+        if (!snap.exists()){
+          await setDoc(ref, {
+            salario: 0, cartaoInter: 0, cartaoC6: 0, seguroCarro: 0, saldoConta: 0,
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+          });
+        }
+      }
+    }
 
-  console.log("Z-API status:", res.status);
-  console.log("Z-API resposta:", JSON.stringify(data));
+    async function ensureReportSettingsExist(){
+      const ref = reportSettingsRef();
+      const snap = await getDoc(ref);
+      if (!snap.exists()){
+        await setDoc(ref, {
+          enabled: false,
+          alertPct: 70,
+          notes: "",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+    }
 
-  if (!res.ok) throw new Error(`Z-API send-text error: ${JSON.stringify(data)}`);
-  if (data && data.success === false) throw new Error(`Z-API retornou falha: ${JSON.stringify(data)}`);
-}
+    function rebuildChart(){
+      const labels = months.map(m => monthNames[months.indexOf(m)].slice(0,3).toUpperCase());
+      const salarios = months.map(m => calcFields(monthsData.get(m)).salario);
+      const saidas = months.map(m => calcFields(monthsData.get(m)).totalSaidas);
+      const saldoFinal = months.map(m => calcFields(monthsData.get(m)).saldoFinal);
 
-// ---------------------------------------------------------------------------
-// Construção dos textos do relatório
-// ---------------------------------------------------------------------------
+      const ctx = $("chart");
+      if (chart) chart.destroy();
 
-function buildCategoryLine(label, value, totalSaidas, salario) {
-  const shareOfSaidas = totalSaidas > 0 ? (value / totalSaidas) * 100 : 0;
-  const shareOfSalario = salario > 0 ? (value / salario) * 100 : 0;
-  return `• ${label}: <b>${money(value)}</b> (${pct(shareOfSaidas, 1)} das saídas · ${pct(shareOfSalario, 1)} do salário)`;
-}
-
-function buildCategoryComparisonLine(label, current, previous) {
-  const diff = current - previous;
-  if (Math.abs(diff) < 0.005) return `   ↳ igual ao mês anterior`;
-  const arrow = diff > 0 ? "🔺" : "🔻";
-  const pctChange = previous > 0 ? Math.abs((diff / previous) * 100) : 0;
-  return `   ↳ ${arrow} ${money(Math.abs(diff))} (${pct(pctChange, 1)}) vs. mês anterior`;
-}
-
-function buildAlertText(month) {
-  if (!month.exists) {
-    return `⚠️ Não encontrei os dados de <b>${month.id}</b>.`;
-  }
-  if (month.percentualSaidas > ALERT_PERCENT) {
-    return `🚨 <b>Alerta:</b> suas saídas consumiram <b>${pct(month.percentualSaidas)}</b> do salário, acima do limite de <b>${ALERT_PERCENT}%</b>.`;
-  }
-  return `✅ Suas saídas ficaram dentro do limite: <b>${pct(month.percentualSaidas)}</b> do salário (limite: ${ALERT_PERCENT}%).`;
-}
-
-function buildComparisonText(currentMonth, previousMonth) {
-  const diff = previousMonth.saidas - currentMonth.saidas;
-
-  if (diff > 0) {
-    const p = previousMonth.saidas > 0 ? ((diff / previousMonth.saidas) * 100).toFixed(2) : "0.00";
-    return `✅ Você gastou <b>${money(diff)}</b> a menos que no mês anterior.\n📉 Redução de <b>${p}%</b>.`;
-  }
-  if (diff < 0) {
-    const increase = Math.abs(diff);
-    const p = previousMonth.saidas > 0 ? ((increase / previousMonth.saidas) * 100).toFixed(2) : "0.00";
-    return `⚠️ Você gastou <b>${money(increase)}</b> a mais que no mês anterior.\n📈 Aumento de <b>${p}%</b>.`;
-  }
-  return `➖ Você gastou exatamente o mesmo valor que no mês anterior.`;
-}
-
-function buildQuickSummary(month) {
-  if (!month.exists) {
-    return `Sem dados para ${month.id}.`;
-  }
-  if (month.sobra < 0) {
-    return `Suas saídas passaram <b>${money(Math.abs(month.sobra))}</b> do salário; seu saldo final projetado ficou em <b>${money(month.saldoFinal)}</b>.`;
-  }
-  return `Você terminou o mês com sobra de <b>${money(month.sobra)}</b> e saldo final projetado de <b>${money(month.saldoFinal)}</b>.`;
-}
-
-function buildFullReport({ closedMonth, previousMonth, yearStats, trend, year }) {
-  const header = `📊 <b>RELATÓRIO FINANCEIRO MENSAL</b>\n🗓 ${monthIdToFullLabel(closedMonth.id)}`;
-
-  const receitaEGastos =
-`💰 <b>Receita e Gastos</b>
-• Salário: <b>${money(closedMonth.salario)}</b>
-${buildCategoryLine("Cartão Inter", closedMonth.inter, closedMonth.saidas, closedMonth.salario)}
-${buildCategoryComparisonLine("Inter", closedMonth.inter, previousMonth.inter)}
-${buildCategoryLine("Cartão C6", closedMonth.c6, closedMonth.saidas, closedMonth.salario)}
-${buildCategoryComparisonLine("C6", closedMonth.c6, previousMonth.c6)}
-${buildCategoryLine("Seguro do carro", closedMonth.seguro, closedMonth.saidas, closedMonth.salario)}
-${buildCategoryComparisonLine("Seguro", closedMonth.seguro, previousMonth.seguro)}
-• <b>Total de saídas: ${money(closedMonth.saidas)}</b> (${pct(closedMonth.percentualSaidas)} do salário)
-• Sobra do mês: <b>${money(closedMonth.sobra)}</b>
-• Saldo final projetado: <b>${money(closedMonth.saldoFinal)}</b>`;
-
-  const comparativo =
-`🔄 <b>Comparativo com ${previousMonth.id}</b>
-${buildComparisonText(closedMonth, previousMonth)}`;
-
-  const mediaAno =
-`📐 <b>Média de ${year} (até este mês, ${yearStats.count} meses fechados)</b>
-• Salário médio: ${money(yearStats.avgSalario)}
-• Saídas médias: ${money(yearStats.avgSaidas)} (${pct(yearStats.avgPercentualSaidas)} do salário)
-• Sobra média: ${money(yearStats.avgSobra)}
-• Total economizado no ano: <b>${money(yearStats.totalEconomizadoAno)}</b>`;
-
-  const destaques = yearStats.melhorMes && yearStats.piorMes
-    ? `🏆 <b>Destaques do ano</b>
-• Melhor mês (maior sobra): ${monthIdToFullLabel(yearStats.melhorMes.id)} — ${money(yearStats.melhorMes.sobra)}
-• Mês mais apertado (menor sobra): ${monthIdToFullLabel(yearStats.piorMes.id)} — ${money(yearStats.piorMes.sobra)}`
-    : "";
-
-  const tendencia = `${trend.emoji} <b>Tendência</b>\n${trend.text}`;
-
-  const resumoRapido = `📝 <b>Resumo rápido</b>\n${buildQuickSummary(closedMonth)}`;
-
-  const alerta = buildAlertText(closedMonth);
-
-  const avisos = [
-    !closedMonth.exists ? `⚠️ Não encontrei o documento do mês <b>${closedMonth.id}</b>.` : "",
-    !previousMonth.exists ? `⚠️ Não encontrei o documento do mês <b>${previousMonth.id}</b>.` : "",
-  ].filter(Boolean).join("\n");
-
-  return [
-    header,
-    receitaEGastos,
-    comparativo,
-    mediaAno,
-    destaques,
-    tendencia,
-    resumoRapido,
-    alerta,
-    avisos,
-  ].filter(Boolean).join("\n\n").trim();
-}
-
-// ---------------------------------------------------------------------------
-// Gráficos
-// ---------------------------------------------------------------------------
-
-async function generateYearChart(months, year) {
-  const width = 1200;
-  const height = 700;
-  const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height, backgroundColour: "white" });
-
-  const labels = months.map((m) => monthLabel(Number(m.id.split("-")[1])));
-  const salarioData = months.map((m) => m.salario);
-  const saidasData = months.map((m) => m.saidas);
-  const saldoFinalData = months.map((m) => m.saldoFinal);
-
-  const configuration = {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        {
-          type: "bar",
-          label: "Salário",
-          data: salarioData,
-          backgroundColor: "rgba(54, 162, 235, 0.6)",
-          borderColor: "rgba(54, 162, 235, 1)",
-          borderWidth: 1,
-        },
-        {
-          type: "bar",
-          label: "Saídas (Inter + C6 + Seguro)",
-          data: saidasData,
-          backgroundColor: "rgba(255, 99, 132, 0.6)",
-          borderColor: "rgba(255, 99, 132, 1)",
-          borderWidth: 1,
-        },
-        {
-          type: "line",
-          label: "Saldo Final Projetado",
-          data: saldoFinalData,
-          borderColor: "rgba(255, 159, 64, 1)",
-          backgroundColor: "rgba(255, 159, 64, 0.2)",
-          borderWidth: 3,
-          tension: 0.25,
-          fill: false,
-          yAxisID: "y",
-        },
-      ],
-    },
-    options: {
-      responsive: false,
-      plugins: {
-        title: { display: true, text: `Panorama financeiro de ${year}`, font: { size: 24 } },
-        legend: { position: "bottom", labels: { font: { size: 16 } } },
-      },
-      scales: {
-        x: { ticks: { font: { size: 14 } } },
-        y: {
-          ticks: {
-            font: { size: 14 },
-            callback: (value) =>
-              new Intl.NumberFormat("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-                maximumFractionDigits: 0,
-              }).format(value),
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [
+          { label: "Salário", data: salarios, borderWidth: 1 },
+          { label: "Saídas (Inter + C6 + Seguro)", data: saidas, borderWidth: 1 },
+          { label: "Saldo Final Projetado", data: saldoFinal, type: "line", tension: 0.25, borderWidth: 2, pointRadius: 3, yAxisID: "y" }
+        ]},
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: "bottom" },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${brl(ctx.parsed.y)}` } }
           },
-        },
-      },
-    },
-  };
+          scales: { y: { ticks: { callback: (v) => brl(v) } } }
+        }
+      });
+    }
 
-  const buffer = await chartJSNodeCanvas.renderToBuffer(configuration);
-  const outputPath = path.join(process.cwd(), `grafico-${year}.png`);
-  fs.writeFileSync(outputPath, buffer);
-  return outputPath;
-}
+    function listenAllMonths(){
+      const colRef = collection(db, "users", uid, "months");
+      unsubAllMonths = onSnapshot(colRef, (snap) => {
+        snap.forEach(docSnap => {
+          const monthId = docSnap.id;
+          if (!monthsData.has(monthId)) return;
+          const d = docSnap.data() || {};
+          monthsData.set(monthId, {
+            salario: parseBRL(d.salario),
+            cartaoInter: parseBRL(d.cartaoInter),
+            cartaoC6: parseBRL(d.cartaoC6),
+            seguroCarro: parseBRL(d.seguroCarro),
+            saldoConta: parseBRL(d.saldoConta)
+          });
+        });
+        rebuildChart();
+      });
+    }
 
-async function generateCategoryPieChart(month) {
-  const width = 900;
-  const height = 700;
-  const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height, backgroundColour: "white" });
+    function listenSelectedMonth(){
+      if (unsubSelected) unsubSelected();
 
-  const configuration = {
-    type: "doughnut",
-    data: {
-      labels: ["Cartão Inter", "Cartão C6", "Seguro do carro"],
-      datasets: [
-        {
-          data: [month.inter, month.c6, month.seguro],
-          backgroundColor: [
-            "rgba(54, 162, 235, 0.75)",
-            "rgba(255, 206, 86, 0.75)",
-            "rgba(153, 102, 255, 0.75)",
-          ],
-          borderColor: "white",
-          borderWidth: 2,
-        },
-      ],
-    },
-    options: {
-      responsive: false,
-      plugins: {
-        title: {
-          display: true,
-          text: `Composição das saídas — ${monthIdToFullLabel(month.id)}`,
-          font: { size: 20 },
-        },
-        legend: { position: "bottom", labels: { font: { size: 16 } } },
-      },
-    },
-  };
+      const m = currentMonthId();
+      $("monthTitle").textContent = monthNames[months.indexOf(m)];
 
-  const buffer = await chartJSNodeCanvas.renderToBuffer(configuration);
-  const outputPath = path.join(process.cwd(), `composicao-${month.id}.png`);
-  fs.writeFileSync(outputPath, buffer);
-  return outputPath;
-}
+      const ref = monthDocRef(m);
+      unsubSelected = onSnapshot(ref, (snap) => {
+        if (!snap.exists()){
+          const empty = {salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0};
+          setInputsFromDoc(empty);
+          $("status").textContent = `Carregado: ${m} • (vazio)`;
+          return;
+        }
+        const d = snap.data() || {};
+        setInputsFromDoc(d);
+        $("status").textContent = `Carregado: ${m} • Última atualização: ok`;
+      });
+    }
 
-// ---------------------------------------------------------------------------
-// Execução principal
-// ---------------------------------------------------------------------------
+    async function saveCurrentMonthAuto(){
+      if (!uid) return;
+      const m = currentMonthId();
+      const ref = monthDocRef(m);
 
-async function main() {
-  const now = new Date();
+      const payload = {
+        salario: parseBRL($("salario").value),
+        cartaoInter: parseBRL($("inter").value),
+        cartaoC6: parseBRL($("c6").value),
+        seguroCarro: parseBRL($("seguroCarro").value),
+        saldoConta: parseBRL($("saldoConta").value),
+        updatedAt: serverTimestamp()
+      };
 
-  const closedMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      if (autosaveInFlight) { pendingSaveAfter = true; return; }
 
-  const closedMonthId = monthId(closedMonthDate);
-  const previousMonthId = monthId(previousMonthDate);
+      autosaveInFlight = true;
+      try{
+        $("status").textContent = "Salvando…";
+        await setDoc(ref, payload, { merge: true });
+        updateKPIs(payload);
+        atualizarTabelaSalvos(payload, Date.now());
+        $("status").textContent = `Salvo automaticamente: ${m}`;
+      } catch (e){
+        console.error(e);
+        $("status").textContent = "Falha ao salvar. Verifique sua internet e tente novamente.";
+      } finally {
+        autosaveInFlight = false;
+        if (pendingSaveAfter) { pendingSaveAfter = false; scheduleAutosave(); }
+      }
+    }
 
-  const closedMonth = await getMonth(REPORT_UID, closedMonthId);
-  const previousMonth = await getMonth(REPORT_UID, previousMonthId);
+    function scheduleAutosave(){
+      clearTimeout(autosaveTimer);
+      autosaveTimer = setTimeout(() => saveCurrentMonthAuto(), 1500);
+    }
 
-  const year = closedMonthDate.getFullYear();
-  const yearMonths = await getYearMonths(REPORT_UID, year);
+    async function resetCurrentMonth(){
+      const m = currentMonthId();
+      const ref = monthDocRef(m);
 
-  const yearStats = computeYearStats(yearMonths, closedMonthId);
-  const trend = computeTrend(yearMonths, closedMonthId);
+      const payload = { salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0, updatedAt: serverTimestamp() };
+      await setDoc(ref, payload, { merge: true });
+      $("status").textContent = `Zerado: ${m}`;
+      updateKPIs(payload);
+      atualizarTabelaSalvos(payload, Date.now());
+      ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
+    }
 
-  const message = buildFullReport({ closedMonth, previousMonth, yearStats, trend, year });
+    $("monthSelect").addEventListener("change", () => {
+      localStorage.setItem(LAST_MONTH_KEY, currentMonthId());
+      listenSelectedMonth();
+    });
+    $("resetBtn").addEventListener("click", resetCurrentMonth);
 
-  await sendTelegramMessage(message);
+    const moneyFields = ["salario","inter","c6","seguroCarro","saldoConta"];
+    moneyFields.forEach(id => {
+      const el = $(id);
+      el.addEventListener("focus", () => markEditing(el, true));
+      el.addEventListener("input", () => {
+        el.value = el.value.replace(/[^\d,.\-R$\s]/g, "");
+        const draft = {
+          salario: $("salario").value,
+          cartaoInter: $("inter").value,
+          cartaoC6: $("c6").value,
+          seguroCarro: $("seguroCarro").value,
+          saldoConta: $("saldoConta").value
+        };
+        updateKPIs(draft);
+        atualizarTabelaSalvos(draft, null);
+        scheduleAutosave();
+      });
+      el.addEventListener("blur", () => {
+        markEditing(el, false);
+        formatInputToBRL(el);
+        saveCurrentMonthAuto();
+      });
+    });
 
-  try {
-    await sendWhatsAppMessage(message);
-  } catch (err) {
-    console.error("Falha ao enviar no WhatsApp:", err.message);
-  }
+    function formatAllInputsNow(){
+      moneyFields.forEach(id => {
+        const el = $(id);
+        if (!el || !el.value || editing.has(id)) return;
+        formatInputToBRL(el);
+      });
+    }
 
-  const yearChartPath = await generateYearChart(yearMonths, year);
-  await sendTelegramPhoto(
-    yearChartPath,
-    `📈 <b>Panorama de ${year}</b>\nSalário, saídas e saldo final projetado mês a mês.`
-  );
+    let reportSaveTimer = null;
+    let reportSaveInFlight = false;
 
-  if (closedMonth.exists && closedMonth.saidas > 0) {
-    const pieChartPath = await generateCategoryPieChart(closedMonth);
-    await sendTelegramPhoto(
-      pieChartPath,
-      `🥧 <b>Composição das saídas de ${monthIdToFullLabel(closedMonth.id)}</b>`
-    );
-  }
+    function setReportUiFromDoc(d){
+      const enabled = !!d.enabled;
+      const alertPct = Number(d.alertPct ?? 70);
+      const notes = String(d.notes ?? "");
 
-  console.log("OK: relatório completo enviado no Telegram e tentativa de envio no WhatsApp concluída.");
-}
+      $("reportEnabled").checked = enabled;
+      $("reportAlertPct").value = Number.isFinite(alertPct) ? alertPct : 70;
+      $("reportNotes").value = notes;
+      $("reportStatus").textContent = enabled
+        ? "Relatório ATIVADO ✅ (enviado automaticamente pelo backend)"
+        : "Relatório DESATIVADO ❌";
+    }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+    function scheduleReportSave(){
+      clearTimeout(reportSaveTimer);
+      reportSaveTimer = setTimeout(saveReportSettings, 600);
+    }
+
+    async function saveReportSettings(){
+      if (!uid) return;
+      if (reportSaveInFlight) return;
+      reportSaveInFlight = true;
+
+      try{
+        $("reportStatus").textContent = "Salvando preferência do relatório…";
+        const ref = reportSettingsRef();
+        const payload = {
+          enabled: !!$("reportEnabled").checked,
+          alertPct: Math.max(10, Math.min(200, Number($("reportAlertPct").value || 70))),
+          notes: String($("reportNotes").value || "").slice(0, 140),
+          updatedAt: serverTimestamp()
+        };
+        await setDoc(ref, payload, { merge: true });
+        $("reportStatus").textContent = payload.enabled
+          ? "Relatório ATIVADO ✅ (o backend vai enviar todo mês)"
+          : "Relatório DESATIVADO ❌";
+      } catch(e){
+        console.error(e);
+        $("reportStatus").textContent = "Falha ao salvar preferências do relatório.";
+      } finally {
+        reportSaveInFlight = false;
+      }
+    }
+
+    function listenReportSettings(){
+      if (unsubReportSettings) unsubReportSettings();
+      const ref = reportSettingsRef();
+      unsubReportSettings = onSnapshot(ref, (snap) => {
+        if (!snap.exists()){
+          setReportUiFromDoc({ enabled:false, alertPct:70, notes:"" });
+          return;
+        }
+        setReportUiFromDoc(snap.data() || {});
+      });
+    }
+
+    ["reportEnabled","reportAlertPct","reportNotes"].forEach(id => {
+      const el = $(id);
+      el.addEventListener("input", scheduleReportSave);
+      el.addEventListener("change", scheduleReportSave);
+      el.addEventListener("blur", saveReportSettings);
+    });
+
+    const ISSUER = "Controle 2026 - Gastos";
+    const SESSION_KEY = "mfa_verified_until_ms";
+
+    function clearTotpUi(){
+      $("secretKeyBox").textContent = "—";
+      $("totpCode").value = "";
+      $("mfaCode").value = "";
+      const c = $("qrCanvas");
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0,0,c.width,c.height);
+    }
+
+    function base32Encode(bytes){
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      let bits = 0, value = 0, output = "";
+      for (const b of bytes){
+        value = (value << 8) | b;
+        bits += 8;
+        while (bits >= 5){
+          output += alphabet[(value >>> (bits - 5)) & 31];
+          bits -= 5;
+        }
+      }
+      if (bits > 0){
+        output += alphabet[(value << (5 - bits)) & 31];
+      }
+      return output;
+    }
+
+    function base32Decode(str){
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      const clean = str.replace(/=+$/,"").toUpperCase().replace(/[^A-Z2-7]/g,"");
+      let bits = 0, value = 0;
+      const out = [];
+      for (const ch of clean){
+        const idx = alphabet.indexOf(ch);
+        if (idx < 0) continue;
+        value = (value << 5) | idx;
+        bits += 5;
+        if (bits >= 8){
+          out.push((value >>> (bits - 8)) & 255);
+          bits -= 8;
+        }
+      }
+      return new Uint8Array(out);
+    }
+
+    function toBigEndianCounter(counter){
+      const buf = new ArrayBuffer(8);
+      const view = new DataView(buf);
+      const high = Math.floor(counter / 2**32);
+      const low = counter >>> 0;
+      view.setUint32(0, high);
+      view.setUint32(4, low);
+      return new Uint8Array(buf);
+    }
+
+    async function hotp(secretBytes, counter, digits=6){
+      const key = await crypto.subtle.importKey(
+        "raw",
+        secretBytes,
+        { name:"HMAC", hash:"SHA-1" },
+        false,
+        ["sign"]
+      );
+      const msg = toBigEndianCounter(counter);
+      const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg));
+      const offset = sig[sig.length - 1] & 0x0f;
+      const bin =
+        ((sig[offset] & 0x7f) << 24) |
+        ((sig[offset+1] & 0xff) << 16) |
+        ((sig[offset+2] & 0xff) << 8) |
+        (sig[offset+3] & 0xff);
+      const mod = bin % (10 ** digits);
+      return String(mod).padStart(digits, "0");
+    }
+
+    async function totp(secretBase32, { period=30, digits=6, driftSteps=1 } = {}){
+      const secretBytes = base32Decode(secretBase32);
+      const nowSec = Math.floor(Date.now()/1000);
+      const counter = Math.floor(nowSec / period);
+
+      const codes = [];
+      for (let d=-driftSteps; d<=driftSteps; d++){
+        codes.push(await hotp(secretBytes, counter + d, digits));
+      }
+      return codes;
+    }
+
+    function makeOtpAuthUrl(email, secretBase32){
+      const label = encodeURIComponent(`${ISSUER}:${email}`);
+      const issuer = encodeURIComponent(ISSUER);
+      const secret = encodeURIComponent(secretBase32);
+      return `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
+    }
+
+    function renderQrOrFallback(uri){
+      return new Promise((resolve) => {
+        const canvas = $("qrCanvas");
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+
+        const QR = window.QRCode;
+        if (!QR){
+          ctx.font = "12px Arial";
+          ctx.fillStyle = "#5f6b76";
+          ctx.fillText("QR indisponível.", 35, 85);
+          ctx.fillText("Use a chave ao lado.", 25, 105);
+          resolve({ ok:false, reason:"QRCode lib não carregou" });
+          return;
+        }
+
+        if (typeof QR.toCanvas === "function"){
+          QR.toCanvas(canvas, uri, { width: 180, margin: 1 }, (err) => {
+            if (err){
+              ctx.font = "12px Arial";
+              ctx.fillStyle = "#5f6b76";
+              ctx.fillText("Falha ao gerar QR.", 30, 85);
+              ctx.fillText("Use a chave ao lado.", 25, 105);
+              resolve({ ok:false, reason:String(err) });
+            } else resolve({ ok:true });
+          });
+          return;
+        }
+
+        try{
+          if (typeof QR.toDataURL === "function"){
+            QR.toDataURL(uri, { width: 180, margin: 1 }, (err, url) => {
+              if (err || !url){
+                ctx.font = "12px Arial";
+                ctx.fillStyle = "#5f6b76";
+                ctx.fillText("Falha ao gerar QR.", 30, 85);
+                ctx.fillText("Use a chave ao lado.", 25, 105);
+                resolve({ ok:false, reason:String(err || "sem url") });
+                return;
+              }
+              const img = new Image();
+              img.onload = () => { ctx.drawImage(img, 0, 0, 180, 180); resolve({ ok:true }); };
+              img.onerror = () => {
+                ctx.font = "12px Arial";
+                ctx.fillStyle = "#5f6b76";
+                ctx.fillText("Falha ao renderizar.", 30, 85);
+                ctx.fillText("Use a chave ao lado.", 25, 105);
+                resolve({ ok:false, reason:"img load fail" });
+              };
+              img.src = url;
+            });
+            return;
+          }
+        } catch(e){}
+
+        ctx.font = "12px Arial";
+        ctx.fillStyle = "#5f6b76";
+        ctx.fillText("QR indisponível.", 35, 85);
+        ctx.fillText("Use a chave ao lado.", 25, 105);
+        resolve({ ok:false, reason:"API QRCode não compatível" });
+      });
+    }
+
+    function isSessionMfaValid(){
+      const until = Number(sessionStorage.getItem(SESSION_KEY) || "0");
+      return Date.now() < until;
+    }
+    function setSessionMfaValid(minutes=360){
+      sessionStorage.setItem(SESSION_KEY, String(Date.now() + minutes*60*1000));
+    }
+    function clearSessionMfa(){
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+
+    async function loadCustomTotpConfig(){
+      const ref = mfaDocRef();
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return { enabled:false };
+      return snap.data() || { enabled:false };
+    }
+
+    $("btnLogin").addEventListener("click", async () => {
+      try{
+        $("loginStatus").textContent = "Entrando…";
+        await signInWithEmailAndPassword(auth, $("loginEmail").value.trim(), $("loginPass").value);
+      } catch(e){
+        console.error(e);
+        $("loginStatus").textContent = "Erro ao entrar: " + (e.code || e.message);
+      }
+    });
+
+    $("btnRegister").addEventListener("click", async () => {
+      try{
+        $("loginStatus").textContent = "Criando conta…";
+        const cred = await createUserWithEmailAndPassword(auth, $("loginEmail").value.trim(), $("loginPass").value);
+        await sendEmailVerification(cred.user, { url: window.location.href, handleCodeInApp: false });
+        $("loginStatus").textContent = "Enviado ✅ Verifique seu e-mail e depois faça login.";
+        await signOut(auth);
+      } catch(e){
+        console.error(e);
+        $("loginStatus").textContent = "Erro ao criar conta: " + (e.code || e.message);
+      }
+    });
+
+    $("btnResendVerify").addEventListener("click", async () => {
+      try{
+        const email = $("loginEmail").value.trim();
+        const pass = $("loginPass").value;
+        if (!email || !pass){
+          $("loginStatus").textContent = "Preencha e-mail e senha para reenviar a verificação.";
+          return;
+        }
+        $("loginStatus").textContent = "Reenviando verificação…";
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        await sendEmailVerification(cred.user, { url: window.location.href, handleCodeInApp: false });
+        $("loginStatus").textContent = "Enviado ✅ Verifique seu e-mail e depois faça login.";
+        await signOut(auth);
+      } catch(e){
+        console.error(e);
+        $("loginStatus").textContent = "Erro ao reenviar: " + (e.code || e.message);
+      }
+    });
+
+    $("logoutBtn").addEventListener("click", async () => {
+      clearSessionMfa();
+      await signOut(auth);
+    });
+
+    $("btnEnrollLogout").addEventListener("click", async () => {
+      clearSessionMfa();
+      await signOut(auth);
+    });
+
+    $("btnMfaBack").addEventListener("click", async () => {
+      clearSessionMfa();
+      await signOut(auth);
+    });
+
+    let pendingSecretBase32 = null;
+
+    $("btnTotpGenerate").addEventListener("click", async () => {
+      try{
+        const user = auth.currentUser;
+        if (!user) { showLogin("Faça login novamente."); return; }
+
+        await reload(user);
+        if (!user.emailVerified){
+          $("enrollStatus").textContent = "Confirme seu e-mail antes de ativar o Authenticator (use Reenviar verificação).";
+          return;
+        }
+
+        clearTotpUi();
+        $("enrollStatus").textContent = "Gerando segredo…";
+
+        const raw = crypto.getRandomValues(new Uint8Array(20));
+        pendingSecretBase32 = base32Encode(raw);
+
+        const uri = makeOtpAuthUrl(user.email || "usuario", pendingSecretBase32);
+
+        $("secretKeyBox").textContent = pendingSecretBase32;
+
+        const qr = await renderQrOrFallback(uri);
+        if (!qr.ok){
+          $("enrollStatus").textContent = "QR indisponível ✅ Use a CHAVE ao lado no Authenticator e digite o código.";
+        } else {
+          $("enrollStatus").textContent = "QR pronto ✅ Abra o Authenticator e digite o código.";
+        }
+      } catch(e){
+        console.error(e);
+        $("enrollStatus").textContent = "Erro ao gerar QR/segredo: " + (e.code || e.message);
+      }
+    });
+
+    $("btnTotpVerify").addEventListener("click", async () => {
+      try{
+        const user = auth.currentUser;
+        if (!user) { showLogin("Faça login novamente."); return; }
+
+        const code = $("totpCode").value.trim();
+        if (!pendingSecretBase32){
+          $("enrollStatus").textContent = "Clique em Gerar QR primeiro.";
+          return;
+        }
+        if (!/^\d{6}$/.test(code)){
+          $("enrollStatus").textContent = "Digite um código válido de 6 dígitos.";
+          return;
+        }
+
+        $("enrollStatus").textContent = "Validando…";
+        const validCodes = await totp(pendingSecretBase32, { driftSteps: 1 });
+        if (!validCodes.includes(code)){
+          $("enrollStatus").textContent = "Código inválido. Tente novamente (confira o horário do celular).";
+          return;
+        }
+
+        await setDoc(mfaDocRef(), {
+          enabled: true,
+          secretBase32: pendingSecretBase32,
+          issuer: ISSUER,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        pendingSecretBase32 = null;
+        setSessionMfaValid(360);
+
+        $("enrollStatus").textContent = "Ativado ✅ Entrando…";
+        await goToApp();
+      } catch(e){
+        console.error(e);
+        $("enrollStatus").textContent = "Erro ao confirmar: " + (e.code || e.message);
+      }
+    });
+
+    $("btnMfaVerify").addEventListener("click", async () => {
+      try{
+        const user = auth.currentUser;
+        if (!user) { showLogin("Faça login novamente."); return; }
+
+        const code = $("mfaCode").value.trim();
+        if (!/^\d{6}$/.test(code)){
+          $("mfaStatus").textContent = "Digite um código válido de 6 dígitos.";
+          return;
+        }
+
+        $("mfaStatus").textContent = "Validando…";
+        const cfg = await loadCustomTotpConfig();
+        if (!cfg?.enabled || !cfg?.secretBase32){
+          showEnroll("Você precisa ativar o Authenticator primeiro.");
+          return;
+        }
+
+        const validCodes = await totp(cfg.secretBase32, { driftSteps: 1 });
+        if (!validCodes.includes(code)){
+          $("mfaStatus").textContent = "Código inválido. Confira o horário do celular e tente novamente.";
+          return;
+        }
+
+        setSessionMfaValid(360);
+        $("mfaStatus").textContent = "Ok ✅ Entrando…";
+        await goToApp();
+      } catch(e){
+        console.error(e);
+        $("mfaStatus").textContent = "Erro: " + (e.code || e.message);
+      }
+    });
+
+    async function goToApp(){
+      showApp();
+      try{
+        $("status").textContent = "Inicializando meses de 2026…";
+        await ensureMonthDocsExist();
+        await ensureReportSettingsExist();
+
+        $("status").textContent = "Pronto ✅";
+        listenAllMonths();
+        listenSelectedMonth();
+        listenReportSettings();
+
+        setTimeout(formatAllInputsNow, 50);
+      } catch(e){
+        console.error(e);
+        $("status").textContent = "Erro ao carregar dados. Veja o console (F12).";
+      }
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+      if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
+      if (unsubSelected) { unsubSelected(); unsubSelected = null; }
+      if (unsubReportSettings) { unsubReportSettings(); unsubReportSettings = null; }
+
+      if (!user){
+        uid = null;
+        pendingSecretBase32 = null;
+        clearTotpUi();
+        clearSessionMfa();
+        showLogin("Faça login para acessar seus dados.");
+        return;
+      }
+
+      await reload(user);
+      if (!user.emailVerified){
+        uid = null;
+        pendingSecretBase32 = null;
+        clearTotpUi();
+        clearSessionMfa();
+        showLogin("Verifique seu e-mail (link de confirmação) e faça login novamente.");
+        await signOut(auth);
+        return;
+      }
+
+      uid = user.uid;
+
+      const cfg = await loadCustomTotpConfig();
+      if (!cfg?.enabled){
+        pendingSecretBase32 = null;
+        clearTotpUi();
+        showEnroll("Ative o Authenticator para continuar.");
+        return;
+      }
+
+      if (isSessionMfaValid()){
+        await goToApp();
+        return;
+      }
+
+      $("mfaCode").value = "";
+      showMfa("Digite o código do Authenticator.");
+    });
+
+    showLogin("Verificando sessão…");
+  </script>
+</body>
+</html>
