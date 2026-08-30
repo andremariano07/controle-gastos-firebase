@@ -248,7 +248,7 @@
       <div>
         <h1 class="month" id="monthTitle">janeiro</h1>
         <div class="small">
-          Ano: <b>2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6 + Seguro))
+          Ano: <b id="yearLabel">2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6 + Seguro))
         </div>
       </div>
 
@@ -258,6 +258,7 @@
       </div>
 
       <div class="controls">
+        <select id="yearSelect"></select>
         <select id="monthSelect"></select>
         <button id="resetBtn" class="ghost" title="Só zera os campos do mês selecionado (não apaga outros meses).">Zerar mês</button>
         <button id="logoutBtn" class="ghost">Sair</button>
@@ -365,7 +366,7 @@
 
       <!-- CARD 3 -->
       <div class="card">
-        <p class="cardTitle">Gráfico 2026</p>
+        <p class="cardTitle">Gráfico <span id="chartYearLabel">2026</span></p>
         <div class="chartBox">
           <canvas id="chart" height="120"></canvas>
         </div>
@@ -383,7 +384,7 @@
             Assim você enxerga fácil:
             <ul>
               <li>se as saídas (cartões + seguro) estão consumindo muito do salário</li>
-              <li>se o saldo final projetado está subindo ou caindo ao longo de 2026</li>
+              <li>se o saldo final projetado está subindo ou caindo ao longo do ano</li>
             </ul>
           </div>
           <div class="small" style="margin-top:10px">
@@ -465,30 +466,78 @@
       el.value = brl(value);
     }
 
-    const months = Array.from({length:12}, (_,i)=> `2026-${String(i+1).padStart(2,"0")}`);
-    const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-    const LAST_MONTH_KEY = "controle_gastos_2026_last_month";
+    // ---------------------------------------------------------------------
+    // Ano/meses dinâmicos (antes fixo em "2026-*")
+    // ---------------------------------------------------------------------
+    function pad2(n){ return String(n).padStart(2, "0"); }
+    function buildMonthsForYear(year){
+      return Array.from({length:12}, (_,i)=> `${year}-${pad2(i+1)}`);
+    }
 
-    months.forEach((id, i) => {
-      const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = `${monthNames[i]} / 2026`;
-      $("monthSelect").appendChild(opt);
-    });
+    const monthNames = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+    const LAST_YEAR_KEY = "controle_gastos_last_year";
+    const LAST_MONTH_NUM_KEY = "controle_gastos_last_month_num"; // 1-12, não amarrado a um ano específico
 
     const now = new Date();
-    const savedMonth = localStorage.getItem(LAST_MONTH_KEY);
-    const currentYearMonth = (now.getFullYear() === 2026) ? `2026-${String(now.getMonth()+1).padStart(2,"0")}` : "2026-01";
-    const defaultMonth = months.includes(savedMonth) ? savedMonth : currentYearMonth;
-    $("monthSelect").value = defaultMonth;
-    $("monthTitle").textContent = monthNames[months.indexOf($("monthSelect").value)];
+    const CURRENT_YEAR = now.getFullYear();
+    // Permite navegar 1 ano para trás e 3 anos para frente a partir do ano atual.
+    const YEAR_MIN = CURRENT_YEAR - 1;
+    const YEAR_MAX = CURRENT_YEAR + 3;
+
+    function populateYearSelect(selectedYear){
+      const sel = $("yearSelect");
+      sel.innerHTML = "";
+      for (let y = YEAR_MIN; y <= YEAR_MAX; y++){
+        const opt = document.createElement("option");
+        opt.value = String(y);
+        opt.textContent = String(y);
+        sel.appendChild(opt);
+      }
+      sel.value = String(selectedYear);
+    }
+
+    function populateMonthSelect(selectedMonthId){
+      const sel = $("monthSelect");
+      sel.innerHTML = "";
+      months.forEach((id, i) => {
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = `${monthNames[i]} / ${YEAR}`;
+        sel.appendChild(opt);
+      });
+      sel.value = selectedMonthId;
+    }
+
+    const savedYearRaw = Number(localStorage.getItem(LAST_YEAR_KEY));
+    let YEAR = (Number.isInteger(savedYearRaw) && savedYearRaw >= YEAR_MIN && savedYearRaw <= YEAR_MAX)
+      ? savedYearRaw
+      : CURRENT_YEAR;
+
+    let months = buildMonthsForYear(YEAR);
+
+    const savedMonthNum = Number(localStorage.getItem(LAST_MONTH_NUM_KEY));
+    const defaultMonthNum = (Number.isInteger(savedMonthNum) && savedMonthNum >= 1 && savedMonthNum <= 12)
+      ? savedMonthNum
+      : (YEAR === CURRENT_YEAR ? now.getMonth() + 1 : 1);
+    let defaultMonth = `${YEAR}-${pad2(defaultMonthNum)}`;
+
+    function applyYearLabels(){
+      $("yearLabel").textContent = String(YEAR);
+      $("chartYearLabel").textContent = String(YEAR);
+      document.title = `Controle ${YEAR} - Gastos`;
+    }
+
+    populateYearSelect(YEAR);
+    populateMonthSelect(defaultMonth);
+    $("monthTitle").textContent = monthNames[months.indexOf(defaultMonth)];
+    applyYearLabels();
 
     let uid = null;
     let unsubSelected = null;
     let unsubAllMonths = null;
     let unsubReportSettings = null;
 
-    const monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
+    let monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
     let chart = null;
 
     let autosaveTimer = null;
@@ -567,8 +616,11 @@
     function mfaDocRef(){ return doc(db, "users", uid, "mfa", "customTotp"); }
     function reportSettingsRef(){ return doc(db, "users", uid, "settings", "report"); }
 
-    async function ensureMonthDocsExist(){
-      for (const m of months){
+    // Paralelizado com Promise.all (antes: 12 leituras+escritas sequenciais
+    // a cada login, mesmo quando os documentos já existiam). Só escreve o
+    // que realmente falta.
+    async function ensureMonthDocsExist(monthIds){
+      await Promise.all(monthIds.map(async (m) => {
         const ref = monthDocRef(m);
         const snap = await getDoc(ref);
         if (!snap.exists()){
@@ -577,7 +629,7 @@
             createdAt: serverTimestamp(), updatedAt: serverTimestamp()
           });
         }
-      }
+      }));
     }
 
     async function ensureReportSettingsExist(){
@@ -595,7 +647,7 @@
     }
 
     function rebuildChart(){
-      const labels = months.map(m => monthNames[months.indexOf(m)].slice(0,3).toUpperCase());
+      const labels = monthNames.map(n => n.slice(0,3).toUpperCase());
       const salarios = months.map(m => calcFields(monthsData.get(m)).salario);
       const saidas = months.map(m => calcFields(monthsData.get(m)).totalSaidas);
       const saldoFinal = months.map(m => calcFields(monthsData.get(m)).saldoFinal);
@@ -622,11 +674,12 @@
     }
 
     function listenAllMonths(){
+      if (unsubAllMonths) { unsubAllMonths(); unsubAllMonths = null; }
       const colRef = collection(db, "users", uid, "months");
       unsubAllMonths = onSnapshot(colRef, (snap) => {
         snap.forEach(docSnap => {
           const monthId = docSnap.id;
-          if (!monthsData.has(monthId)) return;
+          if (!monthsData.has(monthId)) return; // fora do ano selecionado atualmente
           const d = docSnap.data() || {};
           monthsData.set(monthId, {
             salario: parseBRL(d.salario),
@@ -699,8 +752,15 @@
 
     async function resetCurrentMonth(){
       const m = currentMonthId();
-      const ref = monthDocRef(m);
+      const label = `${monthNames[months.indexOf(m)]} / ${YEAR}`;
 
+      // Ação destrutiva e sem undo — confirma antes de zerar.
+      const confirmed = window.confirm(
+        `Tem certeza que deseja zerar todos os campos de ${label}?\nEssa ação não pode ser desfeita.`
+      );
+      if (!confirmed) return;
+
+      const ref = monthDocRef(m);
       const payload = { salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0, updatedAt: serverTimestamp() };
       await setDoc(ref, payload, { merge: true });
       $("status").textContent = `Zerado: ${m}`;
@@ -709,8 +769,36 @@
       ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
     }
 
+    // Troca de ano: reconstrói a lista de meses/dados para o novo ano,
+    // reinicializa os documentos que faltarem e realimenta os listeners.
+    async function switchYear(newYear){
+      YEAR = newYear;
+      months = buildMonthsForYear(YEAR);
+      monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
+
+      localStorage.setItem(LAST_YEAR_KEY, String(YEAR));
+      applyYearLabels();
+
+      const monthNum = (YEAR === CURRENT_YEAR) ? (now.getMonth() + 1) : 1;
+      const targetMonth = `${YEAR}-${pad2(monthNum)}`;
+      populateMonthSelect(targetMonth);
+      localStorage.setItem(LAST_MONTH_NUM_KEY, String(monthNum));
+
+      if (!uid) return;
+
+      $("status").textContent = `Carregando ${YEAR}…`;
+      await ensureMonthDocsExist(months);
+      listenAllMonths();
+      listenSelectedMonth();
+    }
+
+    $("yearSelect").addEventListener("change", () => {
+      switchYear(Number($("yearSelect").value));
+    });
+
     $("monthSelect").addEventListener("change", () => {
-      localStorage.setItem(LAST_MONTH_KEY, currentMonthId());
+      const m = currentMonthId();
+      localStorage.setItem(LAST_MONTH_NUM_KEY, String(Number(m.split("-")[1])));
       listenSelectedMonth();
     });
     $("resetBtn").addEventListener("click", resetCurrentMonth);
@@ -1159,8 +1247,8 @@
     async function goToApp(){
       showApp();
       try{
-        $("status").textContent = "Inicializando meses de 2026…";
-        await ensureMonthDocsExist();
+        $("status").textContent = `Inicializando meses de ${YEAR}…`;
+        await ensureMonthDocsExist(months);
         await ensureReportSettingsExist();
 
         $("status").textContent = "Pronto ✅";
