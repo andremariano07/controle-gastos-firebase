@@ -248,7 +248,7 @@
       <div>
         <h1 class="month" id="monthTitle">janeiro</h1>
         <div class="small">
-          Ano: <b id="yearLabel">2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6 + Seguro))
+          Ano: <b id="yearLabel">2026</b> • Saldo final projetado = saldo em conta + (salário − (Inter + C6 + Amazon + Seguro))
         </div>
       </div>
 
@@ -284,6 +284,10 @@
             <label>Cartão C6 - fatura (R$)</label>
             <input id="c6" type="text" inputmode="decimal" placeholder="R$ 800,00" autocomplete="off">
           </div>
+          <div class="field">
+            <label>Cartão Amazon - fatura (R$)</label>
+            <input id="amazon" type="text" inputmode="decimal" placeholder="R$ 500,00" autocomplete="off">
+          </div>
 
           <div class="field">
             <label>Seguro do carro (R$)</label>
@@ -300,7 +304,7 @@
 
         <div style="margin-top:12px" class="kpis">
           <div class="kpi">
-            <div class="t">Total Saídas (Inter + C6 + Seguro)</div>
+            <div class="t">Total Saídas (Inter + C6 + Amazon + Seguro)</div>
             <div class="v">R$ <span id="totalCartoes">0,00</span></div>
           </div>
           <div class="kpi">
@@ -376,7 +380,7 @@
           <div class="small" style="line-height:1.55">
             <b>Barras (12 meses):</b><br>
             • <b>Salário</b> (positivo)<br>
-            • <b>Saídas (Inter + C6 + Seguro)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
+            • <b>Saídas (Inter + C6 + Amazon + Seguro)</b> (mostrado como valor positivo, mas representa “saída”)<br><br>
 
             <b>Linha (12 meses):</b><br>
             • <b>Saldo Final Projetado</b> = saldo em conta + (salário − saídas)<br><br>
@@ -537,7 +541,7 @@
     let unsubAllMonths = null;
     let unsubReportSettings = null;
 
-    let monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
+    let monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, amazon:0, seguroCarro:0, saldoConta:0 }]));
     let chart = null;
 
     let autosaveTimer = null;
@@ -548,12 +552,13 @@
       const salario = parseBRL(d.salario);
       const inter = parseBRL(d.cartaoInter ?? d.inter);
       const c6 = parseBRL(d.cartaoC6 ?? d.c6);
+      const amazon = parseBRL(d.cartaoAmazon ?? d.amazon);
       const seguroCarro = parseBRL(d.seguroCarro);
       const saldoConta = parseBRL(d.saldoConta);
-      const totalSaidas = inter + c6 + seguroCarro;
+      const totalSaidas = inter + c6 + amazon + seguroCarro;
       const sobraSalario = salario - totalSaidas;
       const saldoFinal = saldoConta + sobraSalario;
-      return { salario, inter, c6, seguroCarro, saldoConta, totalSaidas, sobraSalario, saldoFinal };
+      return { salario, inter, c6, amazon, seguroCarro, saldoConta, totalSaidas, sobraSalario, saldoFinal };
     }
 
     function updateKPIs(d){
@@ -580,6 +585,7 @@
         ["Salário", brl(c.salario)],
         ["Cartão Inter", brl(c.inter)],
         ["Cartão C6", brl(c.c6)],
+        ["Cartão Amazon", brl(c.amazon)],
         ["Seguro Carro", brl(c.seguroCarro)],
         ["Saldo em Conta", brl(c.saldoConta)],
         ["Total Saídas", brl(c.totalSaidas)],
@@ -603,6 +609,7 @@
       safeSetInput("salario", d.salario);
       safeSetInput("inter", d.cartaoInter ?? d.inter);
       safeSetInput("c6", d.cartaoC6 ?? d.c6);
+      safeSetInput("amazon", d.cartaoAmazon ?? d.amazon);
       safeSetInput("seguroCarro", d.seguroCarro);
       safeSetInput("saldoConta", d.saldoConta);
 
@@ -625,7 +632,7 @@
         const snap = await getDoc(ref);
         if (!snap.exists()){
           await setDoc(ref, {
-            salario: 0, cartaoInter: 0, cartaoC6: 0, seguroCarro: 0, saldoConta: 0,
+            salario: 0, cartaoInter: 0, cartaoC6: 0, cartaoAmazon: 0, seguroCarro: 0, saldoConta: 0,
             createdAt: serverTimestamp(), updatedAt: serverTimestamp()
           });
         }
@@ -659,7 +666,7 @@
         type: "bar",
         data: { labels, datasets: [
           { label: "Salário", data: salarios, borderWidth: 1 },
-          { label: "Saídas (Inter + C6 + Seguro)", data: saidas, borderWidth: 1 },
+          { label: "Saídas (Inter + C6 + Amazon + Seguro)", data: saidas, borderWidth: 1 },
           { label: "Saldo Final Projetado", data: saldoFinal, type: "line", tension: 0.25, borderWidth: 2, pointRadius: 3, yAxisID: "y" }
         ]},
         options: {
@@ -685,6 +692,7 @@
             salario: parseBRL(d.salario),
             cartaoInter: parseBRL(d.cartaoInter),
             cartaoC6: parseBRL(d.cartaoC6),
+            cartaoAmazon: parseBRL(d.cartaoAmazon),
             seguroCarro: parseBRL(d.seguroCarro),
             saldoConta: parseBRL(d.saldoConta)
           });
@@ -702,7 +710,7 @@
       const ref = monthDocRef(m);
       unsubSelected = onSnapshot(ref, (snap) => {
         if (!snap.exists()){
-          const empty = {salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0};
+          const empty = {salario:0, cartaoInter:0, cartaoC6:0, cartaoAmazon:0, seguroCarro:0, saldoConta:0};
           setInputsFromDoc(empty);
           $("status").textContent = `Carregado: ${m} • (vazio)`;
           return;
@@ -722,6 +730,7 @@
         salario: parseBRL($("salario").value),
         cartaoInter: parseBRL($("inter").value),
         cartaoC6: parseBRL($("c6").value),
+        cartaoAmazon: parseBRL($("amazon").value),
         seguroCarro: parseBRL($("seguroCarro").value),
         saldoConta: parseBRL($("saldoConta").value),
         updatedAt: serverTimestamp()
@@ -761,12 +770,12 @@
       if (!confirmed) return;
 
       const ref = monthDocRef(m);
-      const payload = { salario:0, cartaoInter:0, cartaoC6:0, seguroCarro:0, saldoConta:0, updatedAt: serverTimestamp() };
+      const payload = { salario:0, cartaoInter:0, cartaoC6:0, cartaoAmazon:0, seguroCarro:0, saldoConta:0, updatedAt: serverTimestamp() };
       await setDoc(ref, payload, { merge: true });
       $("status").textContent = `Zerado: ${m}`;
       updateKPIs(payload);
       atualizarTabelaSalvos(payload, Date.now());
-      ["salario","inter","c6","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
+      ["salario","inter","c6","amazon","seguroCarro","saldoConta"].forEach(id => safeSetInput(id, 0));
     }
 
     // Troca de ano: reconstrói a lista de meses/dados para o novo ano,
@@ -774,7 +783,7 @@
     async function switchYear(newYear){
       YEAR = newYear;
       months = buildMonthsForYear(YEAR);
-      monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, seguroCarro:0, saldoConta:0 }]));
+      monthsData = new Map(months.map(m => [m, { salario:0, inter:0, c6:0, amazon:0, seguroCarro:0, saldoConta:0 }]));
 
       localStorage.setItem(LAST_YEAR_KEY, String(YEAR));
       applyYearLabels();
@@ -803,7 +812,7 @@
     });
     $("resetBtn").addEventListener("click", resetCurrentMonth);
 
-    const moneyFields = ["salario","inter","c6","seguroCarro","saldoConta"];
+    const moneyFields = ["salario","inter","c6","amazon","seguroCarro","saldoConta"];
     moneyFields.forEach(id => {
       const el = $(id);
       el.addEventListener("focus", () => markEditing(el, true));
@@ -813,6 +822,7 @@
           salario: $("salario").value,
           cartaoInter: $("inter").value,
           cartaoC6: $("c6").value,
+          cartaoAmazon: $("amazon").value,
           seguroCarro: $("seguroCarro").value,
           saldoConta: $("saldoConta").value
         };
