@@ -132,10 +132,11 @@ function calc(data = {}) {
   const salario = Number(data.salario || 0);
   const inter = Number(data.cartaoInter ?? data.inter ?? 0);
   const c6 = Number(data.cartaoC6 ?? data.c6 ?? 0);
+  const amazon = Number(data.cartaoAmazon ?? data.amazon ?? 0);
   const seguro = Number(data.seguroCarro || 0);
   const saldoConta = Number(data.saldoConta || 0);
 
-  const saidas = inter + c6 + seguro;
+  const saidas = inter + c6 + amazon + seguro;
   const sobra = salario - saidas;
   const saldoFinal = saldoConta + sobra;
   const percentualSaidas = salario > 0 ? (saidas / salario) * 100 : 0;
@@ -144,6 +145,7 @@ function calc(data = {}) {
     salario,
     inter,
     c6,
+    amazon,
     seguro,
     saldoConta,
     saidas,
@@ -440,6 +442,8 @@ ${buildCategoryLine("Cartão Inter", closedMonth.inter, closedMonth.saidas, clos
 ${buildCategoryComparisonLine("Inter", closedMonth.inter, previousMonth.inter)}
 ${buildCategoryLine("Cartão C6", closedMonth.c6, closedMonth.saidas, closedMonth.salario)}
 ${buildCategoryComparisonLine("C6", closedMonth.c6, previousMonth.c6)}
+${buildCategoryLine("Cartão Amazon", closedMonth.amazon, closedMonth.saidas, closedMonth.salario)}
+${buildCategoryComparisonLine("Amazon", closedMonth.amazon, previousMonth.amazon)}
 ${buildCategoryLine("Seguro do carro", closedMonth.seguro, closedMonth.saidas, closedMonth.salario)}
 ${buildCategoryComparisonLine("Seguro", closedMonth.seguro, previousMonth.seguro)}
 • <b>Total de saídas: ${money(closedMonth.saidas)}</b> (${pct(closedMonth.percentualSaidas)} do salário)
@@ -519,7 +523,7 @@ async function generateYearChart(months, year) {
         },
         {
           type: "bar",
-          label: "Saídas (Inter + C6 + Seguro)",
+          label: "Saídas (Inter + C6 + Amazon + Seguro)",
           data: saidasData,
           backgroundColor: "rgba(255, 99, 132, 0.6)",
           borderColor: "rgba(255, 99, 132, 1)",
@@ -575,13 +579,14 @@ async function generateCategoryPieChart(month) {
   const configuration = {
     type: "doughnut",
     data: {
-      labels: ["Cartão Inter", "Cartão C6", "Seguro do carro"],
+      labels: ["Cartão Inter", "Cartão C6", "Cartão Amazon", "Seguro do carro"],
       datasets: [
         {
-          data: [month.inter, month.c6, month.seguro],
+          data: [month.inter, month.c6, month.amazon, month.seguro],
           backgroundColor: [
             "rgba(54, 162, 235, 0.75)",
             "rgba(255, 206, 86, 0.75)",
+            "rgba(75, 192, 192, 0.75)",
             "rgba(153, 102, 255, 0.75)",
           ],
           borderColor: "white",
